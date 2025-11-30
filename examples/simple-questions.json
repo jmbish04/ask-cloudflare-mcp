@@ -1,0 +1,9 @@
+{
+  "questions": [
+    "How do I deploy a Hono application to Cloudflare Workers?",
+    "What are the best practices for using Workers KV?",
+    "How can I implement rate limiting in a Cloudflare Worker?",
+    "What is the difference between Workers and Pages Functions?",
+    "How do I use Durable Objects for real-time collaboration?"
+  ]
+}
