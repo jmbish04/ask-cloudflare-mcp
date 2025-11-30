@@ -2,7 +2,9 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import { Env } from "./types";
 import apiRoutes from "./routes/api";
+import healthRoutes from "./routes/health";
 import { handleWebSocket } from "./routes/websocket";
+import { handleScheduled } from "./handlers/scheduled";
 
 const app = new OpenAPIHono<{ Bindings: Env }>();
 
@@ -11,6 +13,7 @@ app.use("/*", cors());
 
 // API routes
 app.route("/api", apiRoutes);
+app.route("/api", healthRoutes);
 
 // Root endpoint - serve static landing page
 app.get("/", async (c) => {
@@ -45,22 +48,26 @@ app.get("/", async (c) => {
 });
 
 // OpenAPI spec endpoint
-app.doc("/openapi.json", {
+app.doc("/openapi.json", (c) => ({
   openapi: "3.1.0",
   info: {
     version: "1.0.0",
     title: "Ask Cloudflare MCP API",
-    description: "API for querying Cloudflare documentation with AI-powered analysis and GitHub integration",
+    description: `API for querying Cloudflare documentation with AI-powered analysis and GitHub integration.
+
+### AI Models
+- **Cloudflare Workers AI (Default)**
+  - Reasoning: \`@cf/openai/gpt-oss-120b\`
+  - Structuring: \`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`
+
+- **Google Gemini (via AI Gateway)**
+  - Model: \`gemini-2.5-flash\``,
   },
   servers: [
     {
-      url: "https://ask-cloudflare-mcp.{account}.workers.dev",
+      url: c.env.WORKER_URL || "https://ask-cloudflare-mcp.hacolby.workers.dev",
       description: "Production server",
-    },
-    {
-      url: "http://localhost:8787",
-      description: "Local development server",
-    },
+    }
   ],
   tags: [
     {
@@ -72,7 +79,7 @@ app.doc("/openapi.json", {
       description: "System and health check endpoints",
     },
   ],
-});
+}));
 
 // Swagger UI - serve static file
 app.get("/swagger", async (c) => {
@@ -164,4 +171,9 @@ app.onError((err, c) => {
   );
 });
 
-export default app;
+// Scheduled handler
+export default {
+  fetch: app.fetch,
+  scheduled: handleScheduled
+};
+

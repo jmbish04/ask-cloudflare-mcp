@@ -11,6 +11,7 @@ export interface Env {
   // Gemini secrets
   CF_AIG_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
+  WORKER_URL?: string;
 }
 
 // Question schema for simple pathway
