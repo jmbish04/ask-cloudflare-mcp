@@ -7,6 +7,9 @@ export interface Env {
   MCP_API_URL: string;
   ASSETS: Fetcher;
   QUESTIONS_KV: KVNamespace;
+  // Gemini secrets
+  CF_AIG_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
 }
 
 // Question schema for simple pathway
@@ -114,6 +117,7 @@ export const AutoAnalyzeRepoSchema = z.object({
   repo_url: z.string().describe("GitHub repository URL (e.g., https://github.com/owner/repo)"),
   force_refresh: z.boolean().optional().describe("Force regeneration of questions, ignoring cache"),
   max_files: z.number().optional().describe("Maximum number of files to analyze (default: 50)"),
+  use_gemini: z.boolean().optional().default(false).describe("Use Google Gemini via Cloudflare AI Gateway instead of Workers AI"),
 });
 
 export const AutoAnalyzeResponseSchema = z.object({
