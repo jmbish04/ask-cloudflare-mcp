@@ -26,7 +26,7 @@ export async function fetchGitHubFile(
     );
   }
 
-  const data = await response.json() as any;
+  const data = (await response.json()) as { content: string; encoding: string };
 
   if (data.encoding === "base64") {
     // Decode base64 content
