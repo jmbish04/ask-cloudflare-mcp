@@ -1,5 +1,5 @@
 import { Env, DetailedQuestion } from "../types";
-import { queryWorkerAI } from "./worker-ai";
+import { queryWorkerAIStructured } from "./worker-ai";
 import { getRepoStructure, fetchGitHubFile } from "./github";
 
 /**
@@ -155,6 +155,7 @@ export function filterRelevantFiles(
 
 /**
  * Analyze repository and generate questions using Worker AI
+ * Updated to use queryWorkerAIStructured with GPT-OSS-120B -> Llama-3.3-70B pipeline
  */
 export async function analyzeRepoAndGenerateQuestions(
   ai: Ai,
@@ -184,7 +185,6 @@ export async function analyzeRepoAndGenerateQuestions(
 
   const validFiles = fileContents.filter((f) => f !== null);
 
-  // Analyze with Worker AI
   const analysisPrompt = `You are a technical analyst helping migrate a codebase to Cloudflare Workers/Pages.
 
 Repository: ${owner}/${repo}
@@ -206,42 +206,63 @@ For each question, provide:
 2. Cloudflare bindings that might be relevant (env, kv, r2, durable-objects, ai, etc.)
 3. Node libraries that are being used
 4. Tags for categorization
-5. Relevant code files with line ranges (estimate based on file size)
+5. Relevant code files with line ranges (estimate based on file size)`;
 
-Return ONLY a valid JSON array with this structure:
-[
-  {
-    "query": "How do I migrate environment variables to Cloudflare Workers?",
-    "cloudflare_bindings_involved": ["env", "secrets"],
-    "node_libs_involved": ["dotenv"],
-    "tags": ["migration", "environment", "config"],
-    "relevant_code_files": [
-      {
-        "file_path": "config/env.js",
-        "start_line": 1,
-        "end_line": 50,
-        "relation_to_question": "Environment configuration file"
+  // Define strict JSON schema for the output
+  const schema = {
+    type: "object",
+    properties: {
+      questions: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            cloudflare_bindings_involved: { 
+              type: "array", 
+              items: { type: "string" } 
+            },
+            node_libs_involved: { 
+              type: "array", 
+              items: { type: "string" } 
+            },
+            tags: { 
+              type: "array", 
+              items: { type: "string" } 
+            },
+            relevant_code_files: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  file_path: { type: "string" },
+                  start_line: { type: "integer" },
+                  end_line: { type: "integer" },
+                  relation_to_question: { type: "string" }
+                },
+                required: ["file_path", "start_line", "end_line", "relation_to_question"],
+                additionalProperties: false
+              }
+            }
+          },
+          required: ["query", "cloudflare_bindings_involved", "node_libs_involved", "tags", "relevant_code_files"],
+          additionalProperties: false
+        }
       }
-    ]
-  }
-]`;
+    },
+    required: ["questions"],
+    additionalProperties: false
+  };
 
   try {
-    const response = await queryWorkerAI(ai, analysisPrompt);
-
-    // Parse the JSON response
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error("No JSON array found in AI response");
-    }
-
-    const questions = JSON.parse(jsonMatch[0]) as DetailedQuestion[];
-    return questions;
+    // Use the structured AI pipeline
+    const result = await queryWorkerAIStructured(ai, analysisPrompt, schema);
+    return result.questions;
   } catch (error) {
     console.error("Error generating questions:", error);
 
     // Fallback: generate basic questions based on file analysis
-    return generateFallbackQuestions(validFiles, owner, repo);
+    return generateFallbackQuestions(validFiles as any, owner, repo);
   }
 }
 
@@ -365,6 +386,7 @@ export function deduplicateQuestions(
 
 /**
  * Evaluate if existing questions are sufficient
+ * Updated to use queryWorkerAIStructured
  */
 export async function evaluateQuestionSufficiency(
   ai: Ai,
@@ -382,45 +404,54 @@ ${newQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
 Evaluate:
 1. Are the existing questions comprehensive enough?
 2. Do the new questions add significant value?
-3. Which questions should be included in the final set?
+3. Which questions should be included in the final set?`;
 
-Respond with a JSON object:
-{
-  "sufficient": false,
-  "reasoning": "Brief explanation",
-  "add_new_questions": [0, 1, 2]  // Indices of new questions to add
-}`;
+  const schema = {
+    type: "object",
+    properties: {
+      sufficient: { 
+        type: "boolean",
+        description: "True if existing questions are sufficient, false otherwise"
+      },
+      reasoning: { 
+        type: "string",
+        description: "Brief explanation of the evaluation"
+      },
+      add_new_questions: { 
+        type: "array", 
+        items: { type: "integer" },
+        description: "Indices (0-based) of new questions to add to the existing set"
+      }
+    },
+    required: ["sufficient", "reasoning", "add_new_questions"],
+    additionalProperties: false
+  };
 
   try {
-    const response = await queryWorkerAI(ai, prompt);
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    const evaluation = await queryWorkerAIStructured(ai, prompt, schema);
+    const recommendedQuestions = [...existingQuestions];
 
-    if (jsonMatch) {
-      const evaluation = JSON.parse(jsonMatch[0]);
-      const recommendedQuestions = [...existingQuestions];
-
-      if (evaluation.add_new_questions && Array.isArray(evaluation.add_new_questions)) {
-        for (const index of evaluation.add_new_questions) {
-          if (index < newQuestions.length) {
-            recommendedQuestions.push(newQuestions[index]);
-          }
+    if (evaluation.add_new_questions && Array.isArray(evaluation.add_new_questions)) {
+      for (const index of evaluation.add_new_questions) {
+        if (index < newQuestions.length) {
+          recommendedQuestions.push(newQuestions[index]);
         }
       }
-
-      return {
-        sufficient: evaluation.sufficient || false,
-        reasoning: evaluation.reasoning || "AI evaluation completed",
-        recommendedQuestions,
-      };
     }
+
+    return {
+      sufficient: evaluation.sufficient || false,
+      reasoning: evaluation.reasoning || "AI evaluation completed",
+      recommendedQuestions,
+    };
   } catch (error) {
     console.error("Error evaluating questions:", error);
+    
+    // Fallback: merge and deduplicate
+    return {
+      sufficient: existingQuestions.length > 0,
+      reasoning: "Using automatic deduplication (fallback)",
+      recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions),
+    };
   }
-
-  // Fallback: merge and deduplicate
-  return {
-    sufficient: existingQuestions.length > 0,
-    reasoning: "Using automatic deduplication",
-    recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions),
-  };
 }
