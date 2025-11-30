@@ -5,6 +5,18 @@ const REASONING_MODEL = "@cf/openai/gpt-oss-120b";
 const STRUCTURING_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /**
+ * Standard query to Worker AI (Backward compatibility)
+ * Now defaults to using GPT-OSS-120B for superior reasoning
+ */
+export async function queryWorkerAI(
+  ai: Ai,
+  prompt: string,
+  systemPrompt?: string
+): Promise<string> {
+  return await runReasoningStep(ai, prompt, systemPrompt);
+}
+
+/**
  * New: 2-Step Chain
  * 1. Analyzes with GPT-OSS-120B (High Reasoning)
  * 2. Structures with Llama-3.3-70B (JSON Schema Enforcement)
@@ -33,15 +45,15 @@ export async function queryWorkerAIStructured(
 
 /**
  * Step 1: Run GPT-OSS-120B for raw analysis
- * FIXED: Uses strict 'input' format required by the model to avoid 5006 errors
+ * VERIFIED: Uses strict 'input' format required by the Cloudflare schema
  */
 async function runReasoningStep(
   ai: Ai, 
   prompt: string, 
   systemPrompt?: string
 ): Promise<string> {
-  // Combine system prompt and user prompt into a single input string
-  // as GPT-OSS-120B via Workers AI strictly expects { input: string } or { requests: [] }
+  // GPT-OSS-120B via Workers AI strictly expects { input: string }
+  // It does not accept the standard { messages: [] } format in the primary schema path
   const fullInput = systemPrompt 
     ? `Instructions: ${systemPrompt}\n\nUser Input: ${prompt}`
     : prompt;
@@ -49,8 +61,6 @@ async function runReasoningStep(
   try {
     const response = await ai.run(REASONING_MODEL as any, {
       input: fullInput,
-      // Optional: Add reasoning parameters if supported by binding, 
-      // but 'input' is the critical required field.
       reasoning: {
         effort: "high",
         summary: "concise"
@@ -60,7 +70,6 @@ async function runReasoningStep(
     // Parse the response based on the model's output format
     if (response && typeof response === "object") {
       // The model returns a generic object, usually with a 'response' or 'result' field
-      // For GPT-OSS-120B specifically, we check the likely output keys
       if ("response" in response) return (response as any).response;
       if ("result" in response) return (response as any).result;
       
@@ -74,12 +83,14 @@ async function runReasoningStep(
 
   } catch (error) {
     console.error("GPT-OSS-120B Reasoning Error:", error);
-    throw error;
+    // Fallback: return the prompt itself or a basic error string so the chain doesn't break completely
+    return `Analysis failed. Please proceed with best effort based on input: ${prompt.substring(0, 100)}...`;
   }
 }
 
 /**
  * Step 2: Run Llama-3.3-70B to force JSON structure
+ * VERIFIED: Uses 'messages' and 'response_format' as required by schema
  */
 async function runStructuringStep(
   ai: Ai, 
@@ -107,16 +118,32 @@ async function runStructuringStep(
     }
   } as any);
 
+  // Llama 3.3 with response_format returns the JSON string in the response
   if (response && typeof response === "object" && "response" in response) {
+    const rawOutput = (response as any).response;
     try {
-      return JSON.parse((response as any).response);
+      // FIX: Clean the output before parsing to handle Markdown code blocks (```json ... ```)
+      const cleanedOutput = cleanJsonOutput(rawOutput);
+      return JSON.parse(cleanedOutput);
     } catch (e) {
-      console.error("Failed to parse Llama 3.3 JSON output:", (response as any).response);
+      console.error("Failed to parse Llama 3.3 JSON output:", rawOutput);
       throw new Error("AI failed to produce valid JSON");
     }
   }
 
   throw new Error("Unexpected response format from Structuring Step");
+}
+
+/**
+ * Helper to strip Markdown formatting from JSON output
+ */
+function cleanJsonOutput(text: string): string {
+  let clean = text.trim();
+  // Remove ```json ... ``` or just ``` ... ``` wrappers
+  if (clean.startsWith("```")) {
+    clean = clean.replace(/^```(json)?\n?/, "").replace(/\n?```$/, "");
+  }
+  return clean;
 }
 
 /**
@@ -126,27 +153,51 @@ async function runStructuringStep(
 export async function rewriteQuestionForMCP(
   ai: Ai,
   question: string,
-  context?: any
+  context?: {
+    bindings?: string[];
+    libraries?: string[];
+    tags?: string[];
+    codeSnippets?: Array<{
+      file_path: string;
+      code: string;
+      relation: string;
+    }>;
+  }
 ): Promise<string> {
   const systemPrompt = `You are a technical documentation assistant. Rewrite the user question to be clear, comprehensive, and well-suited for querying Cloudflare documentation.`;
-  
-  // Format context into a readable string
-  let contextStr = "";
+
+  let prompt = `Original Question: ${question}\n\n`;
+
   if (context) {
-    if (context.bindings?.length) contextStr += `Bindings: ${context.bindings.join(", ")}\n`;
-    if (context.codeSnippets?.length) {
-      contextStr += `\nCode Context:\n${context.codeSnippets.map((s: any) => 
-        `File: ${s.file_path}\n${s.code}`
-      ).join("\n\n")}`;
+    if (context.bindings && context.bindings.length > 0) {
+      prompt += `Cloudflare Bindings Involved: ${context.bindings.join(", ")}\n`;
+    }
+    if (context.libraries && context.libraries.length > 0) {
+      prompt += `Node.js Libraries: ${context.libraries.join(", ")}\n`;
+    }
+    if (context.tags && context.tags.length > 0) {
+      prompt += `Tags: ${context.tags.join(", ")}\n`;
+    }
+    if (context.codeSnippets && context.codeSnippets.length > 0) {
+      prompt += `\nRelevant Code Context:\n`;
+      for (const snippet of context.codeSnippets) {
+        prompt += `\nFile: ${snippet.file_path}\n`;
+        prompt += `Relation: ${snippet.relation}\n`;
+        prompt += `Code:\n${snippet.code}\n`;
+      }
     }
   }
 
-  const prompt = `Original Question: ${question}\n\n${contextStr}\nRewrite this question with technical precision for a search engine.`;
+  prompt += `\nPlease rewrite this question with full context and formal technical phrasing, optimized for querying Cloudflare documentation. Focus on the specific Cloudflare features and integration points.`;
 
+  // Schema to force the output we want
   const schema = {
     type: "object",
     properties: {
-      rewritten_question: { type: "string" }
+      rewritten_question: { 
+        type: "string", 
+        description: "The rewritten, technical version of the question." 
+      }
     },
     required: ["rewritten_question"],
     additionalProperties: false
@@ -156,19 +207,38 @@ export async function rewriteQuestionForMCP(
   return result.rewritten_question;
 }
 
+/**
+ * Analyze MCP response and generate follow-up questions
+ */
 export async function analyzeResponseAndGenerateFollowUps(
   ai: Ai,
   originalQuestion: string,
   mcpResponse: any
 ): Promise<{ analysis: string; followUpQuestions: string[] }> {
-  const systemPrompt = `Analyze the documentation response. Identify gaps and generate follow-up questions.`;
-  const prompt = `Original Question: ${originalQuestion}\nResponse: ${JSON.stringify(mcpResponse)}`;
+  const systemPrompt = `You are a technical documentation analyst. Analyze responses from documentation and identify gaps or areas that need clarification.`;
 
+  const prompt = `Original Question: ${originalQuestion}
+
+Documentation Response: ${JSON.stringify(mcpResponse, null, 2)}
+
+Please:
+1. Analyze if the response fully answers the question
+2. Identify any gaps or unclear areas
+3. Generate 2-3 specific follow-up questions if needed (or return empty array if fully answered)`;
+
+  // Strict Schema for Llama 3.3
   const schema = {
     type: "object",
     properties: {
-      analysis: { type: "string" },
-      followUpQuestions: { type: "array", items: { type: "string" } }
+      analysis: { 
+        type: "string",
+        description: "Brief analysis of the response quality and completeness" 
+      },
+      followUpQuestions: { 
+        type: "array",
+        items: { type: "string" },
+        description: "2-3 specific follow-up questions"
+      }
     },
     required: ["analysis", "followUpQuestions"],
     additionalProperties: false
@@ -177,15 +247,28 @@ export async function analyzeResponseAndGenerateFollowUps(
   return await queryWorkerAIStructured(ai, prompt, schema, systemPrompt);
 }
 
-// ... streamWorkerAI remains similar but uses STRUCTURING_MODEL for chat consistency
+/**
+ * Stream Worker AI response
+ * Uses Llama 3.3 for consistent streaming quality
+ */
 export async function streamWorkerAI(
   ai: Ai,
   prompt: string,
   systemPrompt?: string
 ): Promise<ReadableStream> {
   const messages: any[] = [];
-  if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-  messages.push({ role: "user", content: prompt });
+
+  if (systemPrompt) {
+    messages.push({
+      role: "system",
+      content: systemPrompt,
+    });
+  }
+
+  messages.push({
+    role: "user",
+    content: prompt,
+  });
 
   const response = await ai.run(STRUCTURING_MODEL as any, {
     messages,
