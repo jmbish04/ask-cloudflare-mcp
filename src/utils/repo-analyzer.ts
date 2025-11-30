@@ -154,13 +154,15 @@ export async function analyzeRepoAndGenerateQuestions(
   const validFiles = fileContents.filter((f) => f !== null) as Array<{ path: string; content: string }>;
   const repoContext = validFiles.map((f) => `\n=== ${f.path} ===\n${f.content.substring(0, 1500)}...`).join("\n");
 
-  // Helper to query selected provider
+  // Helper to query selected provider with Fallback
   const queryAI = async (prompt: string, schema: object, sysPrompt?: string) => {
     if (useGemini) {
-      // Gemini expects Env (for keys)
+      if (!env.CF_AIG_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+        console.warn("[Analyzer] Gemini requested but missing credentials. Falling back to Workers AI.");
+        return await queryWorkerAIStructured(env.AI, prompt, schema, sysPrompt);
+      }
       return await queryGeminiStructured(env as any, prompt, schema, sysPrompt);
     } else {
-      // Worker AI expects Binding
       return await queryWorkerAIStructured(env.AI, prompt, schema, sysPrompt);
     }
   };
