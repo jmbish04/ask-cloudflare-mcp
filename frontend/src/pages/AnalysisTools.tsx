@@ -4,12 +4,11 @@ import {
   Input, 
   Button, 
   Select,
-  SelectItem,
-  Divider,
-  ScrollShadow,
+  Separator,
   Spinner,
   Accordion,
-  AccordionItem
+  Label,
+  ListBox
 } from "@heroui/react";
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
@@ -33,7 +32,7 @@ const StreamViewer = ({ events }: { events: AnalysisEvent[] }) => {
   }, [events]);
 
   return (
-    <ScrollShadow className="h-[600px] w-full" ref={scrollRef}>
+    <div className="h-[600px] w-full overflow-y-auto custom-scrollbar" ref={scrollRef}>
       <div className="space-y-4 p-4">
         <AnimatePresence initial={false}>
           {events.map((event, i) => (
@@ -54,17 +53,17 @@ const StreamViewer = ({ events }: { events: AnalysisEvent[] }) => {
               {/* Errors */}
               {event.type === 'error' && (
                 <Card className="bg-danger-50 border-danger-200 border">
-                  <Card.Body className="text-danger">
+                  <Card.Content className="text-danger p-4">
                     <p className="font-bold">Error</p>
                     <p>{event.message}</p>
-                  </Card.Body>
+                  </Card.Content>
                 </Card>
               )}
 
               {/* Structured Data Results */}
               {event.type === 'data' && event.data && (
                 <Card className="bg-content2 dark:bg-content1 border-default-200 border">
-                  <Card.Body className="space-y-4">
+                  <Card.Content className="space-y-4 p-4">
                      {/* Header if available */}
                      {event.message && (
                       <div className="flex items-center gap-2 text-success font-bold">
@@ -87,16 +86,21 @@ const StreamViewer = ({ events }: { events: AnalysisEvent[] }) => {
 
                      {/* MCP Response */}
                      {event.data.mcp_response && (
-                       <Accordion variant="splitted">
-                         <AccordionItem key="1" aria-label="MCP Response" title="Cloudflare Documentation Context">
-                           <div className="prose dark:prose-invert max-w-none text-sm">
-                             <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                               {typeof event.data.mcp_response === 'string' 
-                                 ? event.data.mcp_response 
-                                 : JSON.stringify(event.data.mcp_response, null, 2)}
-                             </ReactMarkdown>
-                           </div>
-                         </AccordionItem>
+                       <Accordion variant="default">
+                         <Accordion.Item key="1" aria-label="MCP Response">
+                            <Accordion.Heading>
+                                <Accordion.Trigger>Cloudflare Documentation Context</Accordion.Trigger>
+                            </Accordion.Heading>
+                            <Accordion.Panel>
+                              <div className="prose dark:prose-invert max-w-none text-sm">
+                                <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                                  {typeof event.data.mcp_response === 'string' 
+                                    ? event.data.mcp_response 
+                                    : JSON.stringify(event.data.mcp_response, null, 2)}
+                                </ReactMarkdown>
+                              </div>
+                            </Accordion.Panel>
+                         </Accordion.Item>
                        </Accordion>
                      )}
 
@@ -111,24 +115,24 @@ const StreamViewer = ({ events }: { events: AnalysisEvent[] }) => {
                          </div>
                        </div>
                      )}
-                  </Card.Body>
+                  </Card.Content>
                 </Card>
               )}
 
               {/* Completion */}
               {event.type === 'complete' && (
                 <Card className="bg-success-50 border-success-200 border">
-                  <Card.Body className="text-success font-bold text-center">
+                  <Card.Content className="text-success font-bold text-center p-4">
                     {event.data?.sessionId && <div className="text-sm mb-2">Session ID: {event.data.sessionId}</div>}
                     Analysis Complete!
-                  </Card.Body>
+                  </Card.Content>
                 </Card>
               )}
             </motion.div>
           ))}
         </AnimatePresence>
       </div>
-    </ScrollShadow>
+    </div>
   );
 };
 
@@ -191,7 +195,7 @@ export const AnalysisTools = () => {
               const event = JSON.parse(jsonStr);
               setEvents(prev => [...prev, event]);
             } catch (e) {
-              console.warn("Failed to parse event:", line);
+              console.warn(`Failed to parse event (${JSON.stringify(e)}): ${line}`);
             }
           }
         }
@@ -226,42 +230,67 @@ export const AnalysisTools = () => {
       {/* Sidebar / Configuration */}
       <div className="lg:col-span-4 space-y-6">
         <Card className="h-full">
-          <Card.Header className="flex flex-col items-start gap-2">
+          <Card.Header className="flex flex-col items-start gap-2 p-4">
             <h2 className="text-2xl font-bold">Analysis Tools</h2>
             <p className="text-small text-default-500">Select a tool to begin analysis</p>
           </Card.Header>
-          <Divider/>
-          <Card.Body className="space-y-6 overflow-visible">
-            <Select 
-              label="Select Tool" 
-              selectedKeys={[selectedTool]} 
-              onChange={(e) => setSelectedTool(e.target.value)}
-            >
-              <SelectItem key="simple" startContent={<span className="text-xl">💬</span>}>
-                Simple Question
-              </SelectItem>
-              <SelectItem key="auto-analyze" startContent={<span className="text-xl">🔍</span>}>
-                Repo Auto-Analyze
-              </SelectItem>
-              <SelectItem key="pr-analyze" startContent={<span className="text-xl">🔄</span>}>
-                PR Analysis
-              </SelectItem>
+          <Separator/>
+          <Card.Content className="space-y-6 overflow-visible p-4">
+            <Select selectedKey={selectedTool} onSelectionChange={(key) => setSelectedTool(String(key))}>
+              <Label>Select Tool</Label>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                    <ListBox.Item key="simple" textValue="Simple Question">
+                        <div className="flex items-center gap-2">
+                        <span className="text-xl">💬</span>
+                        <span>Simple Question</span>
+                        </div>
+                    </ListBox.Item>
+                    <ListBox.Item key="auto-analyze" textValue="Repo Auto-Analyze">
+                        <div className="flex items-center gap-2">
+                        <span className="text-xl">🔍</span>
+                        <span>Repo Auto-Analyze</span>
+                        </div>
+                    </ListBox.Item>
+                    <ListBox.Item key="pr-analyze" textValue="PR Analysis">
+                        <div className="flex items-center gap-2">
+                        <span className="text-xl">🔄</span>
+                        <span>PR Analysis</span>
+                        </div>
+                    </ListBox.Item>
+                </ListBox>
+              </Select.Popover>
             </Select>
 
-            <Select 
-              label="AI Provider" 
-              selectedKeys={[useGemini ? "gemini" : "worker-ai"]}
-              onChange={(e) => setUseGemini(e.target.value === "gemini")}
-            >
-              <SelectItem key="worker-ai" startContent={<span className="text-lg">☁️</span>}>
-                Cloudflare Workers AI
-              </SelectItem>
-              <SelectItem key="gemini" startContent={<span className="text-lg">✨</span>}>
-                Google Gemini 2.5 Flash
-              </SelectItem>
+            <Select selectedKey={useGemini ? "gemini" : "worker-ai"} onSelectionChange={(key) => setUseGemini(String(key) === "gemini")}>
+              <Label>AI Provider</Label>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                    <ListBox.Item key="worker-ai" textValue="Cloudflare Workers AI">
+                        <div className="flex items-center gap-2">
+                        <span className="text-lg">☁️</span>
+                        <span>Cloudflare Workers AI</span>
+                        </div>
+                    </ListBox.Item>
+                    <ListBox.Item key="gemini" textValue="Google Gemini 2.5 Flash">
+                        <div className="flex items-center gap-2">
+                        <span className="text-lg">✨</span>
+                        <span>Google Gemini 2.5 Flash</span>
+                        </div>
+                    </ListBox.Item>
+                </ListBox>
+              </Select.Popover>
             </Select>
 
-            <Divider/>
+            <Separator/>
 
             {selectedTool === "simple" && (
               <div className="space-y-2">
@@ -307,14 +336,14 @@ export const AnalysisTools = () => {
                 </p>
               </div>
             )}
-          </Card.Body>
-          <Card.Footer>
+          </Card.Content>
+          <Card.Footer className="p-4">
             {loading ? (
-              <Button color="danger" variant="flat" onPress={handleStop} className="w-full">
+              <Button variant="secondary" onPress={handleStop} className="w-full bg-danger-100 text-danger">
                 Stop Analysis
               </Button>
             ) : (
-              <Button color="primary" onPress={handleAnalyze} className="w-full" size="lg">
+              <Button variant="primary" onPress={handleAnalyze} className="w-full" size="lg">
                 Start Analysis
               </Button>
             )}
@@ -325,14 +354,14 @@ export const AnalysisTools = () => {
       {/* Main Output Area */}
       <div className="lg:col-span-8 h-full flex flex-col">
         <Card className="grow bg-background border-default-200 border">
-          <Card.Header className="flex justify-between items-center border-b border-default-200">
+          <Card.Header className="flex justify-between items-center border-b border-default-200 p-4">
             <div className="flex items-center gap-2">
               <span className="text-xl">⚡</span>
               <h3 className="font-bold">Live Output</h3>
             </div>
-            {loading && <Spinner size="sm" color="primary" />}
+            {loading && <Spinner size="sm" />}
           </Card.Header>
-          <Card.Body className="p-0 bg-black/5 dark:bg-black/20">
+          <Card.Content className="p-0 bg-black/5 dark:bg-black/20 h-[600px]">
             {events.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-default-400 space-y-4">
                 <div className="text-6xl opacity-20">📊</div>
@@ -341,7 +370,7 @@ export const AnalysisTools = () => {
             ) : (
               <StreamViewer events={events} />
             )}
-          </Card.Body>
+          </Card.Content>
         </Card>
       </div>
     </div>

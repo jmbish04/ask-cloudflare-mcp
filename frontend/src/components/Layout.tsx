@@ -46,17 +46,17 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <NavbarContent justify="end">
           <NavbarItem>
              <Link 
-               isExternal 
                href={`${import.meta.env.VITE_WORKER_URL || window.location.origin}/openapi.json`}
                className="text-sm"
-               showAnchorIcon
+               target="_blank"
+               rel="noopener noreferrer"
              >
-               openapi.json
+               openapi.json <Link.Icon />
              </Link>
           </NavbarItem>
           <NavbarItem>
-            <Link isExternal href="https://github.com/jmbish04/ask-cloudflare-mcp" showAnchorIcon>
-              GitHub
+            <Link href="https://github.com/jmbish04/ask-cloudflare-mcp" target="_blank" rel="noopener noreferrer">
+              GitHub <Link.Icon />
             </Link>
           </NavbarItem>
         </NavbarContent>

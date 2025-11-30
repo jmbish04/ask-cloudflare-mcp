@@ -1,22 +1,11 @@
 import { useState, useEffect } from 'react';
 import { 
-  Table, 
-  TableHeader, 
-  TableColumn, 
-  TableBody, 
-  TableRow, 
-  TableCell,
   Chip,
   Button,
   Modal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  useDisclosure,
   Spinner,
   Card,
-  Divider
+  Separator
 } from "@heroui/react";
 
 interface Session {
@@ -30,7 +19,7 @@ interface Session {
 export const Sessions = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
-  const {isOpen, onOpen, onOpenChange} = useDisclosure();
+  const [isOpen, setIsOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [sessionDetails, setSessionDetails] = useState<any>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -50,7 +39,7 @@ export const Sessions = () => {
   const handleViewSession = async (session: Session) => {
     setSelectedSession(session);
     setDetailsLoading(true);
-    onOpen();
+    setIsOpen(true);
     try {
       const res = await fetch(`/api/sessions/${session.sessionId}`);
       const data = await res.json();
@@ -80,100 +69,93 @@ export const Sessions = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Sessions Dashboard</h2>
-        <Button color="primary" onPress={fetchSessions} isLoading={loading}>
+        <Button variant="primary" onPress={fetchSessions} isPending={loading}>
           Refresh
         </Button>
       </div>
 
       <Card>
-        <Card.Body>
-          <Table aria-label="Sessions table">
-            <TableHeader>
-              <TableColumn>TITLE</TableColumn>
-              <TableColumn>TYPE</TableColumn>
-              <TableColumn>TIMESTAMP</TableColumn>
-              <TableColumn>ACTIONS</TableColumn>
-            </TableHeader>
-            <TableBody 
-              emptyContent={loading ? <Spinner /> : "No sessions found"}
-              items={sessions}
-            >
-              {(item) => (
-                <TableRow key={item.sessionId}>
-                  <TableCell>{item.title || "Untitled Session"}</TableCell>
-                  <TableCell>
-                    <Chip color={getEndpointColor(item.endpointType) as any} size="sm" variant="flat">
-                      {item.endpointType}
-                    </Chip>
-                  </TableCell>
-                  <TableCell>{new Date(item.timestamp).toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Button size="sm" color="primary" variant="light" onPress={() => handleViewSession(item)}>
+        <div className="flex flex-col divide-y divide-default-200">
+          <div className="flex p-4 font-bold bg-default-100">
+            <div className="w-1/4">TITLE</div>
+            <div className="w-1/4">TYPE</div>
+            <div className="w-1/4">TIMESTAMP</div>
+            <div className="w-1/4">ACTIONS</div>
+          </div>
+          {loading ? (
+             <div className="flex justify-center p-4"><Spinner /></div>
+          ) : sessions.length === 0 ? (
+             <div className="p-4 text-center text-default-500">No sessions found</div>
+          ) : (
+            sessions.map((item) => (
+              <div key={item.sessionId} className="flex p-4 items-center hover:bg-default-50">
+                <div className="w-1/4 font-medium">{item.title || "Untitled Session"}</div>
+                <div className="w-1/4">
+                  <Chip variant="secondary" size="sm" className={`bg-${getEndpointColor(item.endpointType)}-100 text-${getEndpointColor(item.endpointType)}-700`}>
+                    {item.endpointType}
+                  </Chip>
+                </div>
+                <div className="w-1/4 text-sm text-default-500">{new Date(item.timestamp).toLocaleString()}</div>
+                <div className="w-1/4">
+                    <Button size="sm" variant="secondary" onPress={() => handleViewSession(item)}>
                       View
                     </Button>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Card.Body>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </Card>
 
-      <Modal 
-        isOpen={isOpen} 
-        onOpenChange={onOpenChange} 
-        size="4xl"
-        scrollBehavior="inside"
-      >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                {selectedSession?.title}
-                <span className="text-xs font-normal text-default-500">
-                  ID: {selectedSession?.sessionId}
-                </span>
-              </ModalHeader>
-              <ModalBody>
-                {detailsLoading ? (
-                  <div className="flex justify-center p-8">
-                    <Spinner size="lg" />
-                  </div>
-                ) : sessionDetails ? (
-                  <div className="space-y-4">
-                    {sessionDetails.questions.map((q: any, i: number) => (
-                      <Card key={i} className="bg-default-50">
-                        <Card.Body className="space-y-3">
-                          <div>
-                            <Chip size="sm" color="primary" variant="dot">Question</Chip>
-                            <p className="mt-2 font-medium">{q.question}</p>
-                          </div>
-                          <Divider/>
-                          <div>
-                            <Chip size="sm" color="success" variant="dot">Response</Chip>
-                            <pre className="mt-2 text-xs whitespace-pre-wrap bg-black/10 p-2 rounded">
-                              {JSON.stringify(JSON.parse(q.response), null, 2)}
-                            </pre>
-                          </div>
-                        </Card.Body>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <p>Failed to load session details.</p>
-                )}
-              </ModalBody>
-              <ModalFooter>
-                <Button color="danger" variant="light" onPress={onClose}>
-                  Close
-                </Button>
-                <Button color="primary" onPress={() => window.open(`/api/sessions/${selectedSession?.sessionId}/download`, '_blank')}>
-                  Download JSON
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
+      <Modal isOpen={isOpen} onOpenChange={setIsOpen} scroll="inside">
+        <Modal.Container>
+            <Modal.Dialog className="max-w-4xl w-full">
+                <Modal.CloseTrigger />
+                <Modal.Header className="flex flex-col gap-1">
+                    <h3 className="text-lg font-bold">{selectedSession?.title}</h3>
+                    <span className="text-xs font-normal text-default-500">
+                    ID: {selectedSession?.sessionId}
+                    </span>
+                </Modal.Header>
+                <Modal.Body>
+                    {detailsLoading ? (
+                    <div className="flex justify-center p-8">
+                        <Spinner size="lg" />
+                    </div>
+                    ) : sessionDetails ? (
+                    <div className="space-y-4">
+                        {sessionDetails.questions.map((q: any, i: number) => (
+                        <Card key={i} className="bg-default-50">
+                            <div className="p-3 space-y-3">
+                            <div>
+                                <Chip size="sm" variant="secondary" className="bg-primary-100 text-primary-700">Question</Chip>
+                                <p className="mt-2 font-medium">{q.question}</p>
+                            </div>
+                            <Separator/>
+                            <div>
+                                <Chip size="sm" variant="secondary" className="bg-success-100 text-success-700">Response</Chip>
+                                <pre className="mt-2 text-xs whitespace-pre-wrap bg-black/10 p-2 rounded">
+                                {JSON.stringify(JSON.parse(q.response), null, 2)}
+                                </pre>
+                            </div>
+                            </div>
+                        </Card>
+                        ))}
+                    </div>
+                    ) : (
+                    <p>Failed to load session details.</p>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onPress={() => setIsOpen(false)}>
+                    Close
+                    </Button>
+                    <Button variant="primary" onPress={() => window.open(`/api/sessions/${selectedSession?.sessionId}/download`, '_blank')}>
+                    Download JSON
+                    </Button>
+                </Modal.Footer>
+            </Modal.Dialog>
+        </Modal.Container>
       </Modal>
     </div>
   );

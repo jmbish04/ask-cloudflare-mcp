@@ -1,6 +1,6 @@
 import { 
   Card, 
-  Divider,
+  Separator,
   Link
 } from "@heroui/react";
 import { Link as RouterLink } from "react-router-dom";
@@ -77,11 +77,11 @@ export const Home = () => {
                   <p className="text-md font-bold">{page.title}</p>
                 </div>
               </Card.Header>
-              <Divider/>
-              <Card.Body>
+              <Separator/>
+              <Card.Content>
                 <p className="text-default-500">{page.description}</p>
-              </Card.Body>
-              <Divider/>
+              </Card.Content>
+              <Separator/>
               <Card.Footer>
                 {page.isExternal ? (
                   <Link isExternal href={page.href} color="primary">

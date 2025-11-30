@@ -1,8 +1,8 @@
 import { 
   Card, 
-  Divider,
-  Snippet
+  Separator
 } from "@heroui/react";
+import { Snippet } from "../components/Snippet";
 
 export const Examples = () => {
   // Use the injected environment variable or fallback to window location
@@ -17,8 +17,8 @@ export const Examples = () => {
 
       <Card>
         <Card.Header className="font-bold">Simple Question</Card.Header>
-        <Divider/>
-        <Card.Body>
+        <Separator/>
+        <Card.Content>
           <p className="mb-4">Ask a straightforward technical question about Cloudflare Workers.</p>
           <Snippet symbol="$" className="w-full">
 {`curl -X POST ${workerUrl}/api/questions/simple \\
@@ -28,13 +28,13 @@ export const Examples = () => {
     "use_gemini": true
   }'`}
           </Snippet>
-        </Card.Body>
+        </Card.Content>
       </Card>
 
       <Card>
         <Card.Header className="font-bold">Repository Auto-Analyze</Card.Header>
-        <Divider/>
-        <Card.Body>
+        <Separator/>
+        <Card.Content>
           <p className="mb-4">Analyze a GitHub repository for migration compatibility.</p>
           <Snippet symbol="$" className="w-full">
 {`curl -X POST ${workerUrl}/api/questions/auto-analyze?stream=true \\
@@ -44,13 +44,13 @@ export const Examples = () => {
     "use_gemini": true
   }'`}
           </Snippet>
-        </Card.Body>
+        </Card.Content>
       </Card>
 
       <Card>
         <Card.Header className="font-bold">PR Analysis</Card.Header>
-        <Divider/>
-        <Card.Body>
+        <Separator/>
+        <Card.Content>
           <p className="mb-4">Analyze comments in a Pull Request for Cloudflare context.</p>
           <Snippet symbol="$" className="w-full">
 {`curl -X POST ${workerUrl}/api/questions/pr-analyze?stream=true \\
@@ -60,7 +60,7 @@ export const Examples = () => {
     "comment_filter": "copilot"
   }'`}
           </Snippet>
-        </Card.Body>
+        </Card.Content>
       </Card>
     </div>
   );

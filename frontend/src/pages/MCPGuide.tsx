@@ -1,4 +1,4 @@
-import { Card, Code, Divider } from "@heroui/react";
+import { Card, Separator } from "@heroui/react";
 
 export const MCPGuide = () => {
   // Use the injected environment variable or fallback to window location
@@ -13,7 +13,7 @@ export const MCPGuide = () => {
       </div>
 
       <Card>
-        <Card.Body className="space-y-4 p-6">
+        <Card.Content className="space-y-4 p-6">
           <h3 className="text-xl font-bold">Model Context Protocol (MCP)</h3>
           <p>
             This worker implements the Model Context Protocol, allowing AI agents (like Claude Desktop or Cursor) 
@@ -21,7 +21,7 @@ export const MCPGuide = () => {
           </p>
           
           <h4 className="font-bold mt-4">Usage in Claude Desktop</h4>
-          <p>Add the following configuration to your <Code>claude_desktop_config.json</Code>:</p>
+          <p>Add the following configuration to your <code className="bg-default-100 px-1 py-0.5 rounded text-sm font-mono">claude_desktop_config.json</code>:</p>
           <pre className="bg-default-100 p-4 rounded-lg overflow-x-auto text-sm">
 {`{
   "mcpServers": {
@@ -32,20 +32,20 @@ export const MCPGuide = () => {
   }
 }`}
           </pre>
-        </Card.Body>
+        </Card.Content>
       </Card>
 
       <Card>
-        <Card.Body className="space-y-4 p-6">
+        <Card.Content className="space-y-4 p-6">
           <h3 className="text-xl font-bold">WebSocket API</h3>
           <p>
-            The <Code>/ws</Code> endpoint provides a real-time WebSocket connection for streaming updates.
+            The <code className="bg-default-100 px-1 py-0.5 rounded text-sm font-mono">/ws</code> endpoint provides a real-time WebSocket connection for streaming updates.
           </p>
           
-          <Divider className="my-4"/>
+          <Separator className="my-4"/>
           
           <h4 className="font-bold">Connecting</h4>
-          <Code className="w-full">{`${wsUrl}/ws`}</Code>
+          <code className="block w-full bg-default-100 p-2 rounded text-sm font-mono">{`${wsUrl}/ws`}</code>
           
           <h4 className="font-bold mt-4">Message Format</h4>
           <pre className="bg-default-100 p-4 rounded-lg overflow-x-auto text-sm">
@@ -60,7 +60,7 @@ export const MCPGuide = () => {
   "data": "Processing started..."
 }`}
           </pre>
-        </Card.Body>
+        </Card.Content>
       </Card>
     </div>
   );
