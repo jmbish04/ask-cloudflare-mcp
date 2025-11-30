@@ -37,3 +37,12 @@ MCP_API_URL = "https://docs.mcp.cloudflare.com/mcp"
 [assets]
 directory = "public"
 binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# Cron Triggers
+[triggers]
+crons = [
+  "0 0 * * MON-SAT", # Nightly (Mon-Sat)
+  "0 0 * * SUN"      # Weekly on Sunday
+]
+
