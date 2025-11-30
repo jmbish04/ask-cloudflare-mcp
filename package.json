@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "bunx wrangler dev",
+    "build": "echo 'No build step needed for this worker setup'",
     "deploy": "bunx wrangler deploy",
     "tail": "bunx wrangler tail",
     "types": "bunx wrangler types",
