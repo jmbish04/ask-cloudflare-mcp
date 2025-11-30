@@ -3,6 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2024-11-30"
 compatibility_flags = ["nodejs_compat"]
 
+# Observability Logs
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # AI Binding for Worker AI
 [ai]
 binding = "AI"
@@ -10,8 +15,8 @@ binding = "AI"
 # KV namespace for question caching
 [[kv_namespaces]]
 binding = "QUESTIONS_KV"
-id = "preview_id"
-preview_id = "preview_id"
+id = "10054da1a5e04387ad6734c0432fa289"
+preview_id = "10054da1a5e04387ad6734c0432fa289"
 
 # Secrets (set these using: wrangler secret put GITHUB_TOKEN)
 # GITHUB_TOKEN - GitHub Personal Access Token (readonly)
