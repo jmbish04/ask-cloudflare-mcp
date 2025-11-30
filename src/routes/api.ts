@@ -201,7 +201,7 @@ app.openapi(detailedQuestionsRoute, async (c) => {
             codeSnippets = await extractCodeSnippets(
               repo_owner,
               repo_name,
-              question.relevant_code_files as any,
+              question.relevant_code_files,
               env.GITHUB_TOKEN
             );
           }
