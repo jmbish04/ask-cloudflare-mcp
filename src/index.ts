@@ -54,13 +54,9 @@ app.doc("/openapi.json", {
   },
   servers: [
     {
-      url: "https://ask-cloudflare-mcp.{account}.workers.dev",
+      url: "https://ask-cloudflare-mcp.hacolby.workers.dev",
       description: "Production server",
-    },
-    {
-      url: "http://localhost:8787",
-      description: "Local development server",
-    },
+    }
   ],
   tags: [
     {
