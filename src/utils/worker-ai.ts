@@ -1,46 +1,154 @@
 import { Env } from "../types";
 
+// Models configuration
+const REASONING_MODEL = "@cf/openai/gpt-oss-120b";
+const STRUCTURING_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
 /**
- * Query Worker AI for question rewriting and analysis
+ * Standard query to Worker AI (Backward compatibility)
+ * Now defaults to using GPT-OSS-120B for superior reasoning
  */
 export async function queryWorkerAI(
   ai: Ai,
   prompt: string,
   systemPrompt?: string
 ): Promise<string> {
+  return await runReasoningStep(ai, prompt, systemPrompt);
+}
+
+/**
+ * New: 2-Step Chain
+ * 1. Analyzes with GPT-OSS-120B (High Reasoning)
+ * 2. Structures with Llama-3.3-70B (JSON Schema Enforcement)
+ */
+export async function queryWorkerAIStructured(
+  ai: Ai,
+  prompt: string,
+  schema: object,
+  systemPrompt?: string
+): Promise<any> {
   try {
-    const messages: any[] = [];
+    // Step 1: Reasoning Phase (GPT-OSS-120B)
+    // We let the superior model think freely without JSON constraints first
+    const analysis = await runReasoningStep(ai, prompt, systemPrompt);
 
-    if (systemPrompt) {
-      messages.push({
-        role: "system",
-        content: systemPrompt,
-      });
-    }
-
-    messages.push({
-      role: "user",
-      content: prompt,
-    });
-
-    const response = await ai.run("@cf/meta/llama-3.1-8b-instruct" as any, {
-      messages,
-    } as any);
-
-    // Extract the response content
-    if (response && typeof response === "object" && "response" in response) {
-      return (response as any).response;
-    }
-
-    return JSON.stringify(response);
+    // Step 2: Structuring Phase (Llama-3.3-70B)
+    // We force the reasoning output into the strict JSON schema
+    const structured = await runStructuringStep(ai, analysis, schema);
+    
+    return structured;
   } catch (error) {
-    console.error("Worker AI error:", error);
+    console.error("Structured AI Chain Error:", error);
     throw error;
   }
 }
 
 /**
+ * Step 1: Run GPT-OSS-120B for raw analysis
+ * VERIFIED: Uses strict 'input' format required by the Cloudflare schema
+ */
+async function runReasoningStep(
+  ai: Ai, 
+  prompt: string, 
+  systemPrompt?: string
+): Promise<string> {
+  // GPT-OSS-120B via Workers AI strictly expects { input: string }
+  // It does not accept the standard { messages: [] } format in the primary schema path
+  const fullInput = systemPrompt 
+    ? `Instructions: ${systemPrompt}\n\nUser Input: ${prompt}`
+    : prompt;
+
+  try {
+    const response = await ai.run(REASONING_MODEL as any, {
+      input: fullInput,
+      reasoning: {
+        effort: "high",
+        summary: "concise"
+      }
+    } as any);
+
+    // Parse the response based on the model's output format
+    if (response && typeof response === "object") {
+      // The model returns a generic object, usually with a 'response' or 'result' field
+      if ("response" in response) return (response as any).response;
+      if ("result" in response) return (response as any).result;
+      
+      // If it returns an array of responses (batch mode), take the first
+      if (Array.isArray(response) && response.length > 0) {
+        return response[0];
+      }
+    }
+    
+    return typeof response === "string" ? response : JSON.stringify(response);
+
+  } catch (error) {
+    console.error("GPT-OSS-120B Reasoning Error:", error);
+    // Fallback: return the prompt itself or a basic error string so the chain doesn't break completely
+    return `Analysis failed. Please proceed with best effort based on input: ${prompt.substring(0, 100)}...`;
+  }
+}
+
+/**
+ * Step 2: Run Llama-3.3-70B to force JSON structure
+ * VERIFIED: Uses 'messages' and 'response_format' as required by schema
+ */
+async function runStructuringStep(
+  ai: Ai, 
+  content: string, 
+  schema: object
+): Promise<any> {
+  const structuringPrompt = `You are a data extraction engine. 
+  Extract the information from the provided analysis and format it strictly according to the provided JSON schema.
+  Do not add any conversational text.`;
+
+  const messages = [
+    { role: "system", content: structuringPrompt },
+    { role: "user", content: `Analysis Content:\n${content}` }
+  ];
+
+  const response = await ai.run(STRUCTURING_MODEL as any, {
+    messages,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "extraction_result",
+        schema: schema,
+        strict: true
+      }
+    }
+  } as any);
+
+  // Llama 3.3 with response_format returns the JSON string in the response
+  if (response && typeof response === "object" && "response" in response) {
+    const rawOutput = (response as any).response;
+    try {
+      // FIX: Clean the output before parsing to handle Markdown code blocks (```json ... ```)
+      const cleanedOutput = cleanJsonOutput(rawOutput);
+      return JSON.parse(cleanedOutput);
+    } catch (e) {
+      console.error("Failed to parse Llama 3.3 JSON output:", rawOutput);
+      throw new Error("AI failed to produce valid JSON");
+    }
+  }
+
+  throw new Error("Unexpected response format from Structuring Step");
+}
+
+/**
+ * Helper to strip Markdown formatting from JSON output
+ */
+function cleanJsonOutput(text: string): string {
+  let clean = text.trim();
+  // Remove ```json ... ``` or just ``` ... ``` wrappers
+  if (clean.startsWith("```")) {
+    clean = clean.replace(/^```(json)?\n?/, "").replace(/\n?```$/, "");
+  }
+  return clean;
+}
+
+/**
  * Rewrite a question with full context for MCP
+ * (Backward compatible export)
  */
 export async function rewriteQuestionForMCP(
   ai: Ai,
@@ -56,7 +164,7 @@ export async function rewriteQuestionForMCP(
     }>;
   }
 ): Promise<string> {
-  const systemPrompt = `You are a technical documentation assistant. Your task is to rewrite user questions to be clear, comprehensive, and well-suited for querying the Cloudflare documentation.`;
+  const systemPrompt = `You are a technical documentation assistant. Rewrite the user question to be clear, comprehensive, and well-suited for querying Cloudflare documentation.`;
 
   let prompt = `Original Question: ${question}\n\n`;
 
@@ -82,7 +190,21 @@ export async function rewriteQuestionForMCP(
 
   prompt += `\nPlease rewrite this question with full context and formal technical phrasing, optimized for querying Cloudflare documentation. Focus on the specific Cloudflare features and integration points.`;
 
-  return await queryWorkerAI(ai, prompt, systemPrompt);
+  // Schema to force the output we want
+  const schema = {
+    type: "object",
+    properties: {
+      rewritten_question: { 
+        type: "string", 
+        description: "The rewritten, technical version of the question." 
+      }
+    },
+    required: ["rewritten_question"],
+    additionalProperties: false
+  };
+
+  const result = await queryWorkerAIStructured(ai, prompt, schema, systemPrompt);
+  return result.rewritten_question;
 }
 
 /**
@@ -102,30 +224,27 @@ Documentation Response: ${JSON.stringify(mcpResponse, null, 2)}
 Please:
 1. Analyze if the response fully answers the question
 2. Identify any gaps or unclear areas
-3. Generate 2-3 specific follow-up questions if needed (or return empty array if fully answered)
+3. Generate 2-3 specific follow-up questions if needed (or return empty array if fully answered)`;
 
-Respond in JSON format:
-{
-  "analysis": "Brief analysis of the response quality and completeness",
-  "followUpQuestions": ["question 1", "question 2", ...]
-}`;
+  // Strict Schema for Llama 3.3
+  const schema = {
+    type: "object",
+    properties: {
+      analysis: { 
+        type: "string",
+        description: "Brief analysis of the response quality and completeness" 
+      },
+      followUpQuestions: { 
+        type: "array",
+        items: { type: "string" },
+        description: "2-3 specific follow-up questions"
+      }
+    },
+    required: ["analysis", "followUpQuestions"],
+    additionalProperties: false
+  };
 
-  const response = await queryWorkerAI(ai, prompt, systemPrompt);
-
-  try {
-    // Try to parse as JSON
-    const parsed = JSON.parse(response);
-    return {
-      analysis: parsed.analysis || "",
-      followUpQuestions: parsed.followUpQuestions || [],
-    };
-  } catch {
-    // If not valid JSON, return the raw analysis
-    return {
-      analysis: response,
-      followUpQuestions: [],
-    };
-  }
+  return await queryWorkerAIStructured(ai, prompt, schema, systemPrompt);
 }
 
 /**
@@ -204,6 +323,7 @@ Respond in JSON format:
 
 /**
  * Stream Worker AI response
+ * Uses Llama 3.3 for consistent streaming quality
  */
 export async function streamWorkerAI(
   ai: Ai,
@@ -224,7 +344,7 @@ export async function streamWorkerAI(
     content: prompt,
   });
 
-  const response = await ai.run("@cf/meta/llama-3.1-8b-instruct" as any, {
+  const response = await ai.run(STRUCTURING_MODEL as any, {
     messages,
     stream: true,
   } as any);

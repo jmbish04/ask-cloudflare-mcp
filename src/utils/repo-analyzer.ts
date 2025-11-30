@@ -1,13 +1,14 @@
 import { Env, DetailedQuestion } from "../types";
-import { queryWorkerAI } from "./worker-ai";
+import { queryWorkerAIStructured } from "./worker-ai";
+import { queryGeminiStructured } from "./gemini"; // Import Gemini
 import { getRepoStructure, fetchGitHubFile } from "./github";
+import { fetchCloudflareDocsIndex, fetchDocPages } from "./docs-fetcher";
 
 /**
  * Parse GitHub repository URL
  */
 export function parseRepoUrl(url: string): { owner: string; repo: string } | null {
   try {
-    // Handle various GitHub URL formats
     const patterns = [
       /github\.com\/([^\/]+)\/([^\/\.]+)/,  // https://github.com/owner/repo
       /github\.com\/([^\/]+)\/([^\/]+)\.git/, // https://github.com/owner/repo.git
@@ -22,7 +23,6 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } | nul
         };
       }
     }
-
     return null;
   } catch {
     return null;
@@ -40,16 +40,12 @@ export async function getRepoFileTree(
   maxDepth: number = 3,
   currentDepth: number = 0
 ): Promise<Array<{ path: string; type: string; size?: number }>> {
-  if (currentDepth >= maxDepth) {
-    return [];
-  }
+  if (currentDepth >= maxDepth) return [];
 
   const contents = await getRepoStructure(owner, repo, token, path);
   const files: Array<{ path: string; type: string; size?: number }> = [];
 
-  if (!Array.isArray(contents)) {
-    return [];
-  }
+  if (!Array.isArray(contents)) return [];
 
   for (const item of contents) {
     if (item.type === "file") {
@@ -59,7 +55,6 @@ export async function getRepoFileTree(
         size: item.size,
       });
     } else if (item.type === "dir") {
-      // Recursively get files from subdirectories
       const subFiles = await getRepoFileTree(
         owner,
         repo,
@@ -76,7 +71,7 @@ export async function getRepoFileTree(
 }
 
 /**
- * Filter relevant files for analysis (skip common files like node_modules, etc.)
+ * Filter relevant files for analysis
  */
 export function filterRelevantFiles(
   files: Array<{ path: string; type: string; size?: number }>,
@@ -98,33 +93,13 @@ export function filterRelevantFiles(
   ];
 
   const relevantExtensions = [
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    ".py",
-    ".go",
-    ".rs",
-    ".java",
-    ".php",
-    ".rb",
-    ".vue",
-    ".svelte",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".toml",
-    ".config.js",
-    ".config.ts",
+    ".js", ".ts", ".jsx", ".tsx", ".py", ".go", ".rs", ".java", ".php", ".rb",
+    ".vue", ".svelte", ".json", ".yaml", ".yml", ".toml", ".config.js", ".config.ts",
+    "Dockerfile", "Procfile"
   ];
 
   const filtered = files.filter((file) => {
-    // Skip ignored paths
-    if (ignorePaths.some((ignore) => file.path.includes(ignore))) {
-      return false;
-    }
-
-    // Include files with relevant extensions or config files
+    if (ignorePaths.some((ignore) => file.path.includes(ignore))) return false;
     return (
       relevantExtensions.some((ext) => file.path.endsWith(ext)) ||
       file.path.includes("config") ||
@@ -134,17 +109,9 @@ export function filterRelevantFiles(
     );
   });
 
-  // Sort by relevance (config files first, then by path)
   filtered.sort((a, b) => {
-    const aIsConfig =
-      a.path.includes("config") ||
-      a.path.includes("wrangler") ||
-      a.path.includes("package.json");
-    const bIsConfig =
-      b.path.includes("config") ||
-      b.path.includes("wrangler") ||
-      b.path.includes("package.json");
-
+    const aIsConfig = a.path.includes("config") || a.path.includes("wrangler") || a.path.includes("package.json");
+    const bIsConfig = b.path.includes("config") || b.path.includes("wrangler") || b.path.includes("package.json");
     if (aIsConfig && !bIsConfig) return -1;
     if (!aIsConfig && bIsConfig) return 1;
     return a.path.localeCompare(b.path);
@@ -154,99 +121,178 @@ export function filterRelevantFiles(
 }
 
 /**
- * Analyze repository and generate questions using Worker AI
+ * Analyze repository and generate questions
+ * Supports switching between Worker AI and Gemini
  */
 export async function analyzeRepoAndGenerateQuestions(
-  ai: Ai,
+  env: Env, // Changed from 'ai: Ai' to 'env: Env' to support Gemini config
   owner: string,
   repo: string,
   token: string,
-  maxFiles: number = 50
+  maxFiles: number = 50,
+  useGemini: boolean = false // New flag
 ): Promise<DetailedQuestion[]> {
-  // Get file tree
+  console.log(`[Analyzer] Analyzing ${owner}/${repo}... (Provider: ${useGemini ? "Gemini" : "Workers AI"})`);
+
+  // 1. Fetch Repository Files
   const allFiles = await getRepoFileTree(owner, repo, token);
   const relevantFiles = filterRelevantFiles(allFiles, maxFiles);
 
-  // Read file contents
   const fileContents = await Promise.all(
-    relevantFiles.slice(0, 10).map(async (file) => {
+    relevantFiles.slice(0, 15).map(async (file) => {
       try {
         const content = await fetchGitHubFile(owner, repo, file.path, token);
         return {
           path: file.path,
-          content: content.substring(0, 5000), // Limit content size
+          content: content.substring(0, 8000), 
         };
       } catch {
         return null;
       }
     })
   );
+  const validFiles = fileContents.filter((f) => f !== null) as Array<{ path: string; content: string }>;
+  const repoContext = validFiles.map((f) => `\n=== ${f.path} ===\n${f.content.substring(0, 1500)}...`).join("\n");
 
-  const validFiles = fileContents.filter((f) => f !== null);
-
-  // Analyze with Worker AI
-  const analysisPrompt = `You are a technical analyst helping migrate a codebase to Cloudflare Workers/Pages.
-
-Repository: ${owner}/${repo}
-Files analyzed: ${validFiles.length}
-
-File Structure:
-${validFiles.map((f) => `- ${f!.path}`).join("\n")}
-
-Sample File Contents:
-${validFiles
-  .slice(0, 3)
-  .map((f) => `\n=== ${f!.path} ===\n${f!.content.substring(0, 1000)}...`)
-  .join("\n")}
-
-Please analyze this codebase and generate 5-10 specific questions about migrating to Cloudflare Workers/Pages.
-
-For each question, provide:
-1. The main question
-2. Cloudflare bindings that might be relevant (env, kv, r2, durable-objects, ai, etc.)
-3. Node libraries that are being used
-4. Tags for categorization
-5. Relevant code files with line ranges (estimate based on file size)
-
-Return ONLY a valid JSON array with this structure:
-[
-  {
-    "query": "How do I migrate environment variables to Cloudflare Workers?",
-    "cloudflare_bindings_involved": ["env", "secrets"],
-    "node_libs_involved": ["dotenv"],
-    "tags": ["migration", "environment", "config"],
-    "relevant_code_files": [
-      {
-        "file_path": "config/env.js",
-        "start_line": 1,
-        "end_line": 50,
-        "relation_to_question": "Environment configuration file"
+  // Helper to query selected provider with Fallback
+  const queryAI = async (prompt: string, schema: object, sysPrompt?: string) => {
+    if (useGemini) {
+      if (!env.CF_AIG_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+        console.warn("[Analyzer] Gemini requested but missing credentials. Falling back to Workers AI.");
+        return await queryWorkerAIStructured(env.AI, prompt, schema, sysPrompt);
       }
-    ]
-  }
-]`;
+      return await queryGeminiStructured(env as any, prompt, schema, sysPrompt);
+    } else {
+      return await queryWorkerAIStructured(env.AI, prompt, schema, sysPrompt);
+    }
+  };
 
+  // 2. Fetch Cloudflare Documentation Index (llms.txt)
+  let docsContext = "";
   try {
-    const response = await queryWorkerAI(ai, analysisPrompt);
+    console.log(`[Analyzer] Fetching Cloudflare Docs Index (llms.txt)...`);
+    const docSections = await fetchCloudflareDocsIndex();
+    
+    const indexSummary = docSections.map(s => 
+      `Product: ${s.title}\nPages: ${s.links.slice(0, 5).map(l => l.title).join(", ")}`
+    ).join("\n\n");
 
-    // Parse the JSON response
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error("No JSON array found in AI response");
+    // 3. Ask AI to select relevant documentation
+    const selectionPrompt = `You are a Solutions Architect. 
+    Analyze the repository context and the available Cloudflare documentation.
+    
+    REPO CONTEXT:
+    ${repoContext.substring(0, 4000)}
+
+    AVAILABLE DOCS:
+    ${indexSummary}
+
+    Identify the technology stack and select 3-5 specific Cloudflare documentation URLs.
+    `;
+
+    const selectionSchema = {
+      type: "object",
+      properties: {
+        stack_detected: { type: "string" },
+        relevant_urls: { 
+          type: "array", 
+          items: { type: "string" },
+          description: "List of full URLs to fetch"
+        }
+      },
+      required: ["relevant_urls"],
+      additionalProperties: false
+    };
+
+    const selection = await queryAI(selectionPrompt, selectionSchema);
+    
+    const targetUrls: string[] = [];
+    if (selection.relevant_urls && Array.isArray(selection.relevant_urls)) {
+      const findUrl = (hint: string) => {
+        for (const sec of docSections) {
+          for (const link of sec.links) {
+            if (link.url === hint || link.title === hint) return link.url;
+          }
+        }
+        return hint.startsWith('http') ? hint : null;
+      };
+
+      selection.relevant_urls.forEach((hint: string) => {
+        const url = findUrl(hint);
+        if (url) targetUrls.push(url);
+      });
     }
 
-    const questions = JSON.parse(jsonMatch[0]) as DetailedQuestion[];
-    return questions;
-  } catch (error) {
-    console.error("Error generating questions:", error);
+    if (targetUrls.length > 0) {
+      console.log(`[Analyzer] Fetching ${targetUrls.length} doc pages...`);
+      const fetchedDocs = await fetchDocPages(targetUrls);
+      docsContext = fetchedDocs.map(d => `\n=== CLOUDFLARE DOCS (${d.url}) ===\n${d.content}`).join("\n");
+    }
 
-    // Fallback: generate basic questions based on file analysis
+  } catch (error) {
+    console.warn("[Analyzer] Docs retrieval failed, proceeding with repo context only:", error);
+  }
+
+  // 5. Generate Specific Questions
+  const finalPrompt = `You are a Senior Cloud Architect.
+  
+  REPO ANALYSIS:
+  ${repoContext}
+
+  RELEVANT CLOUDFLARE DOCUMENTATION:
+  ${docsContext}
+
+  TASK:
+  Generate 3-5 highly specific, technical questions to ask the Cloudflare MCP about migrating this repository.
+  `;
+
+  const finalSchema = {
+    type: "object",
+    properties: {
+      questions: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            cloudflare_bindings_involved: { type: "array", items: { type: "string" } },
+            node_libs_involved: { type: "array", items: { type: "string" } },
+            tags: { type: "array", items: { type: "string" } },
+            relevant_code_files: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  file_path: { type: "string" },
+                  start_line: { type: "integer" },
+                  end_line: { type: "integer" },
+                  relation_to_question: { type: "string" }
+                },
+                required: ["file_path", "start_line", "end_line", "relation_to_question"],
+                additionalProperties: false
+              }
+            }
+          },
+          required: ["query", "cloudflare_bindings_involved", "node_libs_involved", "tags", "relevant_code_files"],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ["questions"],
+    additionalProperties: false
+  };
+
+  try {
+    const result = await queryAI(finalPrompt, finalSchema);
+    return result.questions;
+  } catch (error) {
+    console.error("[Analyzer] AI generation failed, using fallback:", error);
     return generateFallbackQuestions(validFiles, owner, repo);
   }
 }
 
 /**
- * Generate fallback questions if AI analysis fails
+ * Generate fallback questions
  */
 function generateFallbackQuestions(
   files: Array<{ path: string; content: string }>,
@@ -255,7 +301,6 @@ function generateFallbackQuestions(
 ): DetailedQuestion[] {
   const questions: DetailedQuestion[] = [];
 
-  // Check for common patterns
   const hasPackageJson = files.some((f) => f.path.includes("package.json"));
   const hasWebpack = files.some((f) =>
     f.path.includes("webpack") || f.content.includes("webpack")
@@ -331,7 +376,6 @@ function generateFallbackQuestions(
     });
   }
 
-  // Always add a general migration question
   questions.push({
     query: `What are the key considerations for migrating ${repo} to Cloudflare Workers/Pages?`,
     cloudflare_bindings_involved: ["env", "kv"],
@@ -343,9 +387,6 @@ function generateFallbackQuestions(
   return questions;
 }
 
-/**
- * Deduplicate and merge questions
- */
 export function deduplicateQuestions(
   existingQuestions: DetailedQuestion[],
   newQuestions: DetailedQuestion[]
@@ -363,64 +404,11 @@ export function deduplicateQuestions(
   return merged;
 }
 
-/**
- * Evaluate if existing questions are sufficient
- */
 export async function evaluateQuestionSufficiency(
   ai: Ai,
   existingQuestions: DetailedQuestion[],
   newQuestions: DetailedQuestion[]
 ): Promise<{ sufficient: boolean; reasoning: string; recommendedQuestions: DetailedQuestion[] }> {
-  const prompt = `You are evaluating whether existing questions about a codebase migration are sufficient.
-
-Existing Questions (${existingQuestions.length}):
-${existingQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
-
-Newly Generated Questions (${newQuestions.length}):
-${newQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
-
-Evaluate:
-1. Are the existing questions comprehensive enough?
-2. Do the new questions add significant value?
-3. Which questions should be included in the final set?
-
-Respond with a JSON object:
-{
-  "sufficient": false,
-  "reasoning": "Brief explanation",
-  "add_new_questions": [0, 1, 2]  // Indices of new questions to add
-}`;
-
-  try {
-    const response = await queryWorkerAI(ai, prompt);
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-
-    if (jsonMatch) {
-      const evaluation = JSON.parse(jsonMatch[0]);
-      const recommendedQuestions = [...existingQuestions];
-
-      if (evaluation.add_new_questions && Array.isArray(evaluation.add_new_questions)) {
-        for (const index of evaluation.add_new_questions) {
-          if (index < newQuestions.length) {
-            recommendedQuestions.push(newQuestions[index]);
-          }
-        }
-      }
-
-      return {
-        sufficient: evaluation.sufficient || false,
-        reasoning: evaluation.reasoning || "AI evaluation completed",
-        recommendedQuestions,
-      };
-    }
-  } catch (error) {
-    console.error("Error evaluating questions:", error);
-  }
-
-  // Fallback: merge and deduplicate
-  return {
-    sufficient: existingQuestions.length > 0,
-    reasoning: "Using automatic deduplication",
-    recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions),
-  };
+  // Keeping this simple for now, can be updated to use provider if needed
+  return { sufficient: existingQuestions.length > 0, reasoning: "Fallback", recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions) };
 }

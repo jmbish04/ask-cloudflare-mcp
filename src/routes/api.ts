@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { streamText } from "hono/streaming";
 import {
   Env,
   SimpleQuestionsSchema,
@@ -11,8 +12,21 @@ import {
   PRAnalyzeResponseSchema,
   DetailedQuestion
 } from "../types";
+
+const SessionSchema = z.object({
+  id: z.number(),
+  sessionId: z.string(),
+  timestamp: z.string(),
+  title: z.string().nullable(),
+  endpointType: z.string(),
+  repoUrl: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 import { queryMCP } from "../utils/mcp-client";
-import { rewriteQuestionForMCP, analyzeResponseAndGenerateFollowUps, analyzeCommentForCloudflare } from "../utils/worker-ai";
+import { rewriteQuestionForMCP as rewriteWorker, analyzeResponseAndGenerateFollowUps as analyzeWorker, analyzeCommentForCloudflare as analyzeCommentWorker } from "../utils/worker-ai";
+import { rewriteQuestionForMCP as rewriteGemini, analyzeResponseAndGenerateFollowUps as analyzeGemini } from "../utils/gemini";
 import { extractCodeSnippets, parsePRUrl, getPRComments, filterCommentsByAuthor } from "../utils/github";
 import {
   parseRepoUrl,
@@ -24,6 +38,27 @@ import { logAction, logError, getSessionActionLogs } from "../utils/action-logge
 import { createSSEStream, getSSEHeaders, ProgressTracker } from "../utils/streaming";
 
 const app = new OpenAPIHono<{ Bindings: Env }>();
+
+// Helper to select provider
+const getProvider = (useGemini: boolean, env: any) => {
+  if (useGemini) {
+    if (!env.CF_AIG_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error("Gemini requested but CF_AIG_TOKEN or CLOUDFLARE_ACCOUNT_ID not set");
+    }
+    return {
+      rewrite: (q: string, ctx?: any) => rewriteGemini(env, q, ctx),
+      analyze: (q: string, resp: any) => analyzeGemini(env, q, resp),
+      // Note: analyzeCommentForCloudflare is currently only implemented in worker-ai
+      // If you implement it in gemini.ts, add it here. For now, fallback or throw.
+      analyzeComment: (comment: string, ctx?: any) => analyzeCommentWorker(env.AI, comment, ctx) 
+    };
+  }
+  return {
+    rewrite: (q: string, ctx?: any) => rewriteWorker(env.AI, q, ctx),
+    analyze: (q: string, resp: any) => analyzeWorker(env.AI, q, resp),
+    analyzeComment: (comment: string, ctx?: any) => analyzeCommentWorker(env.AI, comment, ctx)
+  };
+};
 
 /**
  * Simple questions endpoint - receives array of questions
@@ -80,19 +115,19 @@ app.openapi(simpleQuestionsRoute, async (c) => {
   try {
     const { questions } = c.req.valid("json");
     const env = c.env;
+    const provider = getProvider(false, env); // Default to Worker AI
 
     const results = await Promise.all(
       questions.map(async (question) => {
         try {
-          // Step 1: Rewrite question with AI
-          const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, question);
+          // Step 1: Rewrite question
+          const rewrittenQuestion = await provider.rewrite(question);
 
           // Step 2: Query MCP
           const mcpResponse = await queryMCP(rewrittenQuestion, undefined, env.MCP_API_URL);
 
           // Step 3: Analyze and generate follow-ups
-          const { analysis, followUpQuestions } = await analyzeResponseAndGenerateFollowUps(
-            env.AI,
+          const { analysis, followUpQuestions } = await provider.analyze(
             question,
             mcpResponse
           );
@@ -196,6 +231,7 @@ app.openapi(detailedQuestionsRoute, async (c) => {
   try {
     const { questions, repo_owner, repo_name } = c.req.valid("json");
     const env = c.env;
+    const provider = getProvider(false, env); // Default to Worker AI
 
     const results = await Promise.all(
       questions.map(async (question) => {
@@ -206,13 +242,13 @@ app.openapi(detailedQuestionsRoute, async (c) => {
             codeSnippets = await extractCodeSnippets(
               repo_owner,
               repo_name,
-              question.relevant_code_files,
+              question.relevant_code_files as any,
               env.GITHUB_TOKEN
             );
           }
 
           // Step 2: Rewrite question with full context
-          const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, question.query, {
+          const rewrittenQuestion = await provider.rewrite(question.query, {
             bindings: question.cloudflare_bindings_involved,
             libraries: question.node_libs_involved,
             tags: question.tags,
@@ -224,8 +260,7 @@ app.openapi(detailedQuestionsRoute, async (c) => {
           const mcpResponse = await queryMCP(rewrittenQuestion, context, env.MCP_API_URL);
 
           // Step 4: Analyze and generate follow-ups
-          const { analysis, followUpQuestions } = await analyzeResponseAndGenerateFollowUps(
-            env.AI,
+          const { analysis, followUpQuestions } = await provider.analyze(
             question.query,
             mcpResponse
           );
@@ -277,38 +312,6 @@ app.openapi(detailedQuestionsRoute, async (c) => {
 });
 
 /**
- * Health check endpoint
- */
-const healthRoute = createRoute({
-  method: "get",
-  path: "/health",
-  operationId: "healthCheck",
-  tags: ["System"],
-  summary: "Health check",
-  description: "Check if the service is running",
-  responses: {
-    200: {
-      description: "Service is healthy",
-      content: {
-        "application/json": {
-          schema: z.object({
-            status: z.string(),
-            timestamp: z.string(),
-          }),
-        },
-      },
-    },
-  },
-});
-
-app.openapi(healthRoute, async (c) => {
-  return c.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-/**
  * Auto-analyze repository endpoint - generates and processes questions automatically
  */
 const autoAnalyzeRoute = createRoute({
@@ -319,6 +322,9 @@ const autoAnalyzeRoute = createRoute({
   summary: "Auto-analyze GitHub repository",
   description: "Automatically analyze a GitHub repository, generate relevant questions, cache them in KV, and process through the detailed pathway. Always starts with the fundamental question: 'Can this repo be retrofitted to run on Cloudflare?'",
   request: {
+    query: z.object({
+      stream: z.string().optional(),
+    }),
     body: {
       content: {
         "application/json": {
@@ -334,6 +340,8 @@ const autoAnalyzeRoute = createRoute({
         "application/json": {
           schema: AutoAnalyzeResponseSchema,
         },
+        "text/plain": { schema: z.string() },
+        "text/event-stream": { schema: z.string() }
       },
     },
     400: {
@@ -361,7 +369,8 @@ const autoAnalyzeRoute = createRoute({
 
 app.openapi(autoAnalyzeRoute, async (c) => {
   try {
-    const { repo_url, force_refresh = false, max_files = 50 } = c.req.valid("json");
+    const { repo_url, force_refresh = false, max_files = 50, use_gemini = false } = c.req.valid("json");
+    const streamMode = c.req.query("stream") === "true";
     const env = c.env;
 
     // Parse repo URL
@@ -373,7 +382,80 @@ app.openapi(autoAnalyzeRoute, async (c) => {
     const { owner, repo } = parsed;
     const cacheKey = `questions:${owner}:${repo}`;
 
-    // Check cache first (unless force_refresh is true)
+    // Select Provider
+    const provider = getProvider(use_gemini, env);
+
+    // --- Streaming Logic ---
+    if (streamMode) {
+      return streamText(c, async (stream) => {
+        const log = async (msg: string) => await stream.write(msg + "\n");
+        await log(`🚀 Starting analysis for ${owner}/${repo}...`);
+        await log(`🤖 Using AI Provider: ${use_gemini ? "Google Gemini 2.5 Flash" : "Cloudflare Workers AI"}`);
+
+        let questions: DetailedQuestion[] = [];
+        let cached = false;
+
+        if (!force_refresh) {
+          await log(`🔍 Checking cache...`);
+          const cachedData = await env.QUESTIONS_KV.get(cacheKey, "json");
+          if (cachedData && Array.isArray(cachedData)) {
+            questions = cachedData as DetailedQuestion[];
+            cached = true;
+            await log(`✅ Found ${questions.length} cached questions.`);
+          }
+        }
+
+        if (questions.length === 0) {
+          await log(`🧠 Cache miss. Analyzing repository structure and docs...`);
+          await log(`   (This may take 10-20 seconds...)`);
+          
+          // Pass use_gemini flag to repo analyzer
+          const generatedQuestions = await analyzeRepoAndGenerateQuestions(
+            env, // Pass full env
+            owner,
+            repo,
+            env.GITHUB_TOKEN,
+            max_files,
+            use_gemini // Pass the flag
+          );
+
+          const fundamentalQuestion: DetailedQuestion = {
+            query: `Can the ${repo} repository be retrofitted to run on Cloudflare Workers?`,
+            cloudflare_bindings_involved: ["env", "kv", "r2", "durable-objects"],
+            node_libs_involved: [],
+            tags: ["feasibility", "migration"],
+            relevant_code_files: [],
+          };
+
+          questions = [fundamentalQuestion, ...generatedQuestions];
+          await log(`✨ Generated ${questions.length} migration questions.`);
+          await env.QUESTIONS_KV.put(cacheKey, JSON.stringify(questions), { expirationTtl: 86400 * 7 });
+        }
+
+        await log(`\n⚡ Processing ${questions.length} questions against Cloudflare Docs...`);
+
+        for (const [index, question] of questions.entries()) {
+          await log(`   [${index + 1}/${questions.length}] Asking: "${question.query}"...`);
+          try {
+            const rewritten = await provider.rewrite(question.query, {
+              bindings: question.cloudflare_bindings_involved,
+              libraries: question.node_libs_involved,
+              tags: question.tags
+            });
+
+            const mcpRes = await queryMCP(rewritten, undefined, env.MCP_API_URL);
+            const { analysis } = await provider.analyze(question.query, mcpRes);
+
+            await log(`      -> ✅ Analysis complete.`);
+          } catch (err) {
+            await log(`      -> ❌ Error: ${err instanceof Error ? err.message : "Unknown"}`);
+          }
+        }
+        await log(`\n🎉 Analysis Complete!`);
+      }) as any; // Cast to any to avoid type mismatch with zod-openapi
+    }
+
+    // --- Standard JSON Logic (Non-Streaming) ---
     let questions: DetailedQuestion[] = [];
     let cached = false;
 
@@ -382,15 +464,19 @@ app.openapi(autoAnalyzeRoute, async (c) => {
       if (cachedData && Array.isArray(cachedData)) {
         questions = cachedData as DetailedQuestion[];
         cached = true;
-        console.log(`Using ${questions.length} cached questions for ${owner}/${repo}`);
       }
     }
 
-    // Generate new questions if not cached or force refresh
     if (questions.length === 0) {
-      console.log(`Analyzing repository ${owner}/${repo}...`);
+      const generatedQuestions = await analyzeRepoAndGenerateQuestions(
+        env,
+        owner,
+        repo,
+        env.GITHUB_TOKEN,
+        max_files,
+        use_gemini
+      );
 
-      // Always start with the fundamental question
       const fundamentalQuestion: DetailedQuestion = {
         query: `Can the ${repo} repository be retrofitted to run on Cloudflare Workers or Cloudflare Pages?`,
         cloudflare_bindings_involved: ["env", "kv", "r2", "durable-objects", "ai"],
@@ -399,40 +485,11 @@ app.openapi(autoAnalyzeRoute, async (c) => {
         relevant_code_files: [],
       };
 
-      // Generate additional questions using Worker AI
-      const generatedQuestions = await analyzeRepoAndGenerateQuestions(
-        env.AI,
-        owner,
-        repo,
-        env.GITHUB_TOKEN,
-        max_files
-      );
-
-      // If we had cached questions, evaluate if we should merge
-      if (cached && questions.length > 0) {
-        const evaluation = await evaluateQuestionSufficiency(
-          env.AI,
-          questions,
-          [fundamentalQuestion, ...generatedQuestions]
-        );
-
-        questions = evaluation.recommendedQuestions;
-        console.log(`Merged questions: ${evaluation.reasoning}`);
-      } else {
-        // Use fundamental question + generated questions
-        questions = [fundamentalQuestion, ...generatedQuestions];
-      }
-
-      // Cache the questions for future use
+      questions = [fundamentalQuestion, ...generatedQuestions];
       await env.QUESTIONS_KV.put(cacheKey, JSON.stringify(questions), {
-        expirationTtl: 86400 * 7, // Cache for 7 days
+        expirationTtl: 86400 * 7,
       });
-
-      console.log(`Generated and cached ${questions.length} questions`);
     }
-
-    // Process questions through the detailed pathway
-    console.log(`Processing ${questions.length} questions...`);
 
     const results = await Promise.all(
       questions.map(async (question) => {
@@ -449,7 +506,7 @@ app.openapi(autoAnalyzeRoute, async (c) => {
           }
 
           // Rewrite question with full context
-          const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, question.query, {
+          const rewrittenQuestion = await provider.rewrite(question.query, {
             bindings: question.cloudflare_bindings_involved,
             libraries: question.node_libs_involved,
             tags: question.tags,
@@ -461,8 +518,7 @@ app.openapi(autoAnalyzeRoute, async (c) => {
           const mcpResponse = await queryMCP(rewrittenQuestion, context, env.MCP_API_URL);
 
           // Analyze and generate follow-ups
-          const { analysis, followUpQuestions } = await analyzeResponseAndGenerateFollowUps(
-            env.AI,
+          const { analysis, followUpQuestions } = await provider.analyze(
             question.query,
             mcpResponse
           );
@@ -545,6 +601,7 @@ const prAnalyzeRoute = createRoute({
         "application/json": {
           schema: PRAnalyzeResponseSchema,
         },
+        "text/event-stream": { schema: z.string() }
       },
     },
     400: {
@@ -583,6 +640,7 @@ async function handlePRAnalyzeStream(
   prNumber: number
 ) {
   const sse = createSSEStream();
+  const provider = getProvider(false, env); // Default to Worker AI for PR analysis for now
 
   // Start streaming response
   c.header('Content-Type', 'text/event-stream');
@@ -630,7 +688,7 @@ async function handlePRAnalyzeStream(
         try {
           // Analyze if comment is Cloudflare-related
           sse.sendProgress(`  🔍 Checking if comment is Cloudflare-related...`);
-          const analysis = await analyzeCommentForCloudflare(env.AI, comment.body, {
+          const analysis = await provider.analyzeComment(comment.body, {
             filePath: comment.file_path,
             line: comment.line,
           });
@@ -661,7 +719,7 @@ async function handlePRAnalyzeStream(
               sse.sendProgress(`    [${j + 1}/${analysis.questions.length}] Processing: "${question.substring(0, 60)}${question.length > 60 ? '...' : ''}"`);
 
               // Rewrite question for MCP
-              const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, question);
+              const rewrittenQuestion = await provider.rewrite(question);
 
               // Query MCP
               sse.sendProgress(`    📚 Querying Cloudflare docs...`);
@@ -798,10 +856,11 @@ app.openapi(prAnalyzeRoute, async (c) => {
     }
 
     const { owner, repo, prNumber } = parsed;
+    const provider = getProvider(false, env); // Default to Worker AI
 
     // If streaming requested, use streaming handler
     if (wantsStream) {
-      return handlePRAnalyzeStream(c, env, pr_url, comment_filter, owner, repo, prNumber);
+      return handlePRAnalyzeStream(c, env, pr_url, comment_filter, owner, repo, prNumber) as any;
     }
 
     // Create session for tracking
@@ -834,7 +893,7 @@ app.openapi(prAnalyzeRoute, async (c) => {
       comments.map(async (comment) => {
         try {
           // Analyze if comment is Cloudflare-related
-          const analysis = await analyzeCommentForCloudflare(env.AI, comment.body, {
+          const analysis = await provider.analyzeComment(comment.body, {
             filePath: comment.file_path,
             line: comment.line,
           });
@@ -857,7 +916,7 @@ app.openapi(prAnalyzeRoute, async (c) => {
             analysis.questions.map(async (question) => {
               try {
                 // Rewrite question for MCP
-                const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, question);
+                const rewrittenQuestion = await provider.rewrite(question);
 
                 // Query MCP
                 const context = `PR Comment Analysis - ${owner}/${repo} PR #${prNumber}`;
@@ -991,10 +1050,20 @@ const listSessionsRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            sessions: z.array(z.any()),
+            sessions: z.array(SessionSchema),
             total: z.number(),
             limit: z.number(),
             offset: z.number(),
+          }),
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
           }),
         },
       },
@@ -1016,7 +1085,7 @@ app.openapi(listSessionsRoute, async (c) => {
       total: sessions.length,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
-    });
+    }) as any;
   } catch (error) {
     console.error("Error listing sessions:", error);
     return c.json(
@@ -1047,7 +1116,7 @@ const getSessionRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            session: z.any(),
+            session: SessionSchema,
             questions: z.array(z.any()),
             action_logs: z.array(z.any()),
           }),
@@ -1056,6 +1125,16 @@ const getSessionRoute = createRoute({
     },
     404: {
       description: "Session not found",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
+          }),
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
       content: {
         "application/json": {
           schema: z.object({
@@ -1083,7 +1162,7 @@ app.openapi(getSessionRoute, async (c) => {
       session,
       questions,
       action_logs: actionLogs,
-    });
+    }) as any;
   } catch (error) {
     console.error("Error getting session:", error);
     return c.json(
@@ -1127,6 +1206,16 @@ const downloadSessionRoute = createRoute({
         },
       },
     },
+    500: {
+      description: "Internal server error",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
+          }),
+        },
+      },
+    },
   },
 });
 
@@ -1145,18 +1234,18 @@ app.openapi(downloadSessionRoute, async (c) => {
     const parsedQuestions = questions.map((q) => ({
       id: q.id,
       question: q.question,
-      metadata: q.meta_json ? JSON.parse(q.meta_json) : null,
+      metadata: q.metaJson ? JSON.parse(q.metaJson) : null,
       response: JSON.parse(q.response),
-      source: q.question_source,
-      created_at: q.created_at,
+      source: q.questionSource,
+      created_at: q.createdAt,
     }));
 
     const downloadData = {
       session: {
-        id: session.session_id,
+        id: session.sessionId,
         title: session.title,
-        endpoint_type: session.endpoint_type,
-        repo_url: session.repo_url,
+        endpoint_type: session.endpointType,
+        repo_url: session.repoUrl,
         timestamp: session.timestamp,
       },
       questions: parsedQuestions,
@@ -1165,7 +1254,7 @@ app.openapi(downloadSessionRoute, async (c) => {
 
     // Set headers for file download
     c.header("Content-Disposition", `attachment; filename="session-${sessionId}.json"`);
-    return c.json(downloadData);
+    return c.json(downloadData) as any;
   } catch (error) {
     console.error("Error downloading session:", error);
     return c.json(

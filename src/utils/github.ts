@@ -1,6 +1,33 @@
 import { Env } from "../types";
 
 /**
+ * Get the default branch name for a repository
+ * (Added for Option 2: Robust Fix)
+ */
+export async function getDefaultBranch(
+  owner: string,
+  repo: string,
+  token: string
+): Promise<string> {
+  const url = `https://api.github.com/repos/${owner}/${repo}`;
+  
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "Cloudflare-Worker-MCP",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch repo info: ${response.status}`);
+  }
+
+  const data = await response.json() as any;
+  return data.default_branch;
+}
+
+/**
  * Fetch file content from GitHub
  */
 export async function fetchGitHubFile(
@@ -8,9 +35,11 @@ export async function fetchGitHubFile(
   repo: string,
   path: string,
   token: string,
-  ref: string = "main"
+  ref?: string // Changed to optional for dynamic default branch
 ): Promise<string> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}`;
+  // Use provided ref or fetch default branch
+  const branch = ref || await getDefaultBranch(owner, repo, token);
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
 
   const response = await fetch(url, {
     headers: {
@@ -44,7 +73,7 @@ export async function fetchGitHubFiles(
   repo: string,
   files: Array<{ path: string; start_line?: number; end_line?: number }>,
   token: string,
-  ref: string = "main"
+  ref?: string // Changed to optional for dynamic default branch
 ): Promise<
   Array<{
     path: string;
@@ -52,10 +81,13 @@ export async function fetchGitHubFiles(
     snippet?: string;
   }>
 > {
+  // Resolve branch once for all files if not provided
+  const branch = ref || await getDefaultBranch(owner, repo, token);
+
   const results = await Promise.all(
     files.map(async (file) => {
       try {
-        const content = await fetchGitHubFile(owner, repo, file.path, token, ref);
+        const content = await fetchGitHubFile(owner, repo, file.path, token, branch);
 
         // Extract snippet if line numbers provided
         let snippet: string | undefined;
@@ -93,9 +125,10 @@ export async function getRepoStructure(
   repo: string,
   token: string,
   path: string = "",
-  ref: string = "main"
+  ref?: string // Changed to optional for dynamic default branch
 ): Promise<any> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}`;
+  const branch = ref || await getDefaultBranch(owner, repo, token);
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
 
   const response = await fetch(url, {
     headers: {
@@ -157,7 +190,7 @@ export async function extractCodeSnippets(
     relation_to_question: string;
   }>,
   token: string,
-  ref: string = "main"
+  ref?: string // Changed to optional for dynamic default branch
 ): Promise<
   Array<{
     file_path: string;
@@ -165,6 +198,8 @@ export async function extractCodeSnippets(
     relation: string;
   }>
 > {
+  const branch = ref || await getDefaultBranch(owner, repo, token);
+
   const snippets = await Promise.all(
     files.map(async (file) => {
       try {
@@ -173,7 +208,7 @@ export async function extractCodeSnippets(
           repo,
           file.file_path,
           token,
-          ref
+          branch
         );
 
         const lines = content.split("\n");
@@ -227,7 +262,6 @@ export async function getPRComments(
   prNumber: number,
   token: string
 ): Promise<Array<{
-  id: number;
   author: string;
   body: string;
   file_path?: string;

@@ -21,7 +21,8 @@ export async function queryMCP(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        // FIX: The server requires both types to be present in the Accept header
+        "Accept": "application/json, text/event-stream", 
       },
       body: JSON.stringify(payload),
     });
@@ -63,7 +64,8 @@ export async function queryMCPStream(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Accept": "text/event-stream",
+      // FIX: The server requires both types to be present in the Accept header
+      "Accept": "text/event-stream, application/json",
     },
     body: JSON.stringify(payload),
   });
