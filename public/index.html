@@ -327,6 +327,11 @@
                         <span class="description">Process detailed questions with GitHub code context</span>
                     </li>
                     <li>
+                        <span class="method post">POST</span>
+                        <span class="path">/api/questions/auto-analyze</span>
+                        <span class="description">🆕 Auto-analyze GitHub repo, generate questions with AI, cache in KV, and process. Always answers: "Can this repo run on Cloudflare?"</span>
+                    </li>
+                    <li>
                         <span class="method get">GET</span>
                         <span class="path">/openapi.json</span>
                         <span class="description">OpenAPI 3.1.0 specification</span>
@@ -408,6 +413,51 @@
       "relation_to_question": "Webpack configuration"
     }]
   }]
+}</pre>
+                </div>
+
+                <h3>🆕 Auto-Analyze Repository Request</h3>
+                <p>Automatically analyze a GitHub repository and generate questions:</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    <pre>curl -X POST https://your-worker.workers.dev/api/questions/auto-analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/your-username/your-repo",
+    "force_refresh": false,
+    "max_files": 50
+  }'</pre>
+                </div>
+
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    <pre>// Request body
+{
+  "repo_url": "https://github.com/your-username/your-repo",
+  "force_refresh": false,    // Optional: bypass cache
+  "max_files": 50            // Optional: limit files analyzed
+}
+
+// Response includes:
+{
+  "repo_url": "https://github.com/your-username/your-repo",
+  "repo_owner": "your-username",
+  "repo_name": "your-repo",
+  "cached": false,
+  "questions_generated": 6,
+  "questions": [
+    {
+      "query": "Can the your-repo repository be retrofitted to run on Cloudflare Workers or Pages?",
+      "cloudflare_bindings_involved": ["env", "kv", "r2"],
+      "node_libs_involved": [],
+      "tags": ["feasibility", "migration", "cloudflare"],
+      "relevant_code_files": []
+    }
+    // ... more generated questions
+  ],
+  "results": [/* Full analysis for each question */],
+  "total_processed": 6,
+  "timestamp": "2024-11-30T12:00:00.000Z"
 }</pre>
                 </div>
 

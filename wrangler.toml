@@ -7,10 +7,11 @@ compatibility_flags = ["nodejs_compat"]
 [ai]
 binding = "AI"
 
-# KV namespace for caching (optional)
-# [[kv_namespaces]]
-# binding = "CACHE"
-# id = "your-kv-namespace-id"
+# KV namespace for question caching
+[[kv_namespaces]]
+binding = "QUESTIONS_KV"
+id = "preview_id"
+preview_id = "preview_id"
 
 # Secrets (set these using: wrangler secret put GITHUB_TOKEN)
 # GITHUB_TOKEN - GitHub Personal Access Token (readonly)

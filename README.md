@@ -11,6 +11,8 @@ A Cloudflare Worker that acts as both an API and MCP (Model Context Protocol) se
 - 🌐 **WebSocket Support**: Real-time communication for streaming responses
 - 📖 **OpenAPI 3.1.0**: Fully documented API with Swagger UI
 - 🎨 **Beautiful Landing Page**: Interactive documentation served as static assets
+- 🤖 **Auto-Analyze Repositories**: Automatically analyze any GitHub repo with AI-generated questions
+- 💾 **KV Caching**: Smart caching of generated questions to avoid re-analysis
 - 🔒 **Secure**: Uses GitHub Personal Access Token for readonly repository access
 
 ## Architecture
@@ -219,7 +221,72 @@ curl -X POST https://your-worker.workers.dev/api/questions/detailed \
   -d @examples/detailed-questions.json
 ```
 
-#### 3. Health Check
+#### 3. Auto-Analyze Repository Endpoint (NEW!)
+
+Automatically analyze a GitHub repository, generate questions using Worker AI, cache them in KV, and process through the detailed pathway. **Always starts with the fundamental question: "Can this repository be retrofitted to run on Cloudflare?"**
+
+**Endpoint:** `POST /api/questions/auto-analyze`
+
+**Request Body:**
+```json
+{
+  "repo_url": "https://github.com/facebook/react",
+  "force_refresh": false,  // Optional: bypass cache (default: false)
+  "max_files": 50         // Optional: max files to analyze (default: 50)
+}
+```
+
+**Response:**
+```json
+{
+  "repo_url": "https://github.com/facebook/react",
+  "repo_owner": "facebook",
+  "repo_name": "react",
+  "cached": false,
+  "questions_generated": 6,
+  "questions": [
+    {
+      "query": "Can the react repository be retrofitted to run on Cloudflare Workers or Cloudflare Pages?",
+      "cloudflare_bindings_involved": ["env", "kv", "r2", "durable-objects", "ai"],
+      "node_libs_involved": [],
+      "tags": ["feasibility", "migration", "cloudflare", "assessment"],
+      "relevant_code_files": []
+    },
+    // ... more AI-generated questions
+  ],
+  "results": [
+    // Full analysis for each question (same format as detailed endpoint)
+  ],
+  "total_processed": 6,
+  "timestamp": "2024-11-30T12:00:00.000Z"
+}
+```
+
+**Example:**
+```bash
+curl -X POST https://your-worker.workers.dev/api/questions/auto-analyze \
+  -H "Content-Type: application/json" \
+  -d @examples/auto-analyze.json
+```
+
+**Features:**
+- 🤖 **AI-Powered Analysis**: Worker AI analyzes your codebase and generates relevant questions
+- 💾 **KV Caching**: Questions are cached for 7 days to avoid re-analysis
+- 🔍 **Smart File Filtering**: Automatically identifies relevant files (configs, source code)
+- 🎯 **Fundamental Question**: Always includes "Can this repo run on Cloudflare?"
+- 📊 **Comprehensive Results**: Full MCP analysis with follow-up questions for each generated question
+
+**How it works:**
+1. Parse the GitHub repository URL
+2. Check KV cache for previously generated questions (unless `force_refresh=true`)
+3. If not cached: fetch repository structure and relevant files
+4. Use Worker AI to analyze the codebase and generate migration questions
+5. Always include the fundamental feasibility question
+6. Cache the questions in KV for future use
+7. Process all questions through the detailed pathway
+8. Return comprehensive analysis with answers
+
+#### 4. Health Check
 
 **Endpoint:** `GET /api/health`
 
@@ -369,6 +436,7 @@ ask-cloudflare-mcp/
 | `MCP_API_URL` | Cloudflare Docs MCP API URL | Yes (default set) |
 | `AI` | Worker AI binding | Yes (auto-configured) |
 | `ASSETS` | Static assets binding for landing page | Yes (auto-configured) |
+| `QUESTIONS_KV` | KV namespace for caching generated questions | Yes (auto-configured) |
 
 ## Development
 

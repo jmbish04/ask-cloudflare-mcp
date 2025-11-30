@@ -6,6 +6,7 @@ export interface Env {
   GITHUB_TOKEN: string;
   MCP_API_URL: string;
   ASSETS: Fetcher;
+  QUESTIONS_KV: KVNamespace;
 }
 
 // Question schema for simple pathway
@@ -108,6 +109,41 @@ export interface WSMessage {
   timestamp?: string;
 }
 
+// Auto-analyze repository schema
+export const AutoAnalyzeRepoSchema = z.object({
+  repo_url: z.string().describe("GitHub repository URL (e.g., https://github.com/owner/repo)"),
+  force_refresh: z.boolean().optional().describe("Force regeneration of questions, ignoring cache"),
+  max_files: z.number().optional().describe("Maximum number of files to analyze (default: 50)"),
+});
+
+export const AutoAnalyzeResponseSchema = z.object({
+  repo_url: z.string(),
+  repo_owner: z.string(),
+  repo_name: z.string(),
+  cached: z.boolean(),
+  questions_generated: z.number(),
+  questions: z.array(DetailedQuestionSchema),
+  results: z.array(
+    z.object({
+      original_question: DetailedQuestionSchema,
+      code_snippets: z.array(
+        z.object({
+          file_path: z.string(),
+          code: z.string(),
+          relation: z.string(),
+        })
+      ).optional(),
+      rewritten_question: z.string().optional(),
+      mcp_response: z.any(),
+      follow_up_questions: z.array(z.string()).optional(),
+      follow_up_answers: z.array(z.any()).optional(),
+      ai_analysis: z.string().optional(),
+    })
+  ),
+  total_processed: z.number(),
+  timestamp: z.string(),
+});
+
 // Types for the response
 export type SimpleQuestion = z.infer<typeof SimpleQuestionSchema>;
 export type SimpleQuestions = z.infer<typeof SimpleQuestionsSchema>;
@@ -116,3 +152,5 @@ export type DetailedQuestions = z.infer<typeof DetailedQuestionsSchema>;
 export type Answer = z.infer<typeof AnswerSchema>;
 export type SimpleResponse = z.infer<typeof SimpleResponseSchema>;
 export type DetailedResponse = z.infer<typeof DetailedResponseSchema>;
+export type AutoAnalyzeRepo = z.infer<typeof AutoAnalyzeRepoSchema>;
+export type AutoAnalyzeResponse = z.infer<typeof AutoAnalyzeResponseSchema>;
