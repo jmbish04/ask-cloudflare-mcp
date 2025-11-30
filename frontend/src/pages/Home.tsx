@@ -57,7 +57,7 @@ export const Home = () => {
   return (
     <div className="space-y-8">
       <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-500">
+        <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-linear-to-r from-blue-500 to-purple-500">
           Ask Cloudflare MCP
         </h1>
         <p className="text-default-500">
@@ -70,7 +70,7 @@ export const Home = () => {
           <StaggerItem key={page.title}>
             <Card className="hover:scale-105 transition-transform duration-200 h-full">
               <Card.Header className="flex gap-3">
-                <div className={`text-2xl p-2 rounded-lg bg-gradient-to-br ${page.color} text-white`}>
+                <div className={`text-2xl p-2 rounded-lg bg-linear-to-br ${page.color} text-white`}>
                   {page.icon}
                 </div>
                 <div className="flex flex-col">

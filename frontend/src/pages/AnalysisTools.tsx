@@ -324,7 +324,7 @@ export const AnalysisTools = () => {
 
       {/* Main Output Area */}
       <div className="lg:col-span-8 h-full flex flex-col">
-        <Card className="flex-grow bg-background border-default-200 border">
+        <Card className="grow bg-background border-default-200 border">
           <Card.Header className="flex justify-between items-center border-b border-default-200">
             <div className="flex items-center gap-2">
               <span className="text-xl">⚡</span>
