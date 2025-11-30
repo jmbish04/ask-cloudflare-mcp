@@ -8,7 +8,6 @@ import { fetchCloudflareDocsIndex, fetchDocPages } from "./docs-fetcher";
  */
 export function parseRepoUrl(url: string): { owner: string; repo: string } | null {
   try {
-    // Handle various GitHub URL formats
     const patterns = [
       /github\.com\/([^\/]+)\/([^\/\.]+)/,  // https://github.com/owner/repo
       /github\.com\/([^\/]+)\/([^\/]+)\.git/, // https://github.com/owner/repo.git
@@ -23,7 +22,6 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } | nul
         };
       }
     }
-
     return null;
   } catch {
     return null;
@@ -41,16 +39,12 @@ export async function getRepoFileTree(
   maxDepth: number = 3,
   currentDepth: number = 0
 ): Promise<Array<{ path: string; type: string; size?: number }>> {
-  if (currentDepth >= maxDepth) {
-    return [];
-  }
+  if (currentDepth >= maxDepth) return [];
 
   const contents = await getRepoStructure(owner, repo, token, path);
   const files: Array<{ path: string; type: string; size?: number }> = [];
 
-  if (!Array.isArray(contents)) {
-    return [];
-  }
+  if (!Array.isArray(contents)) return [];
 
   for (const item of contents) {
     if (item.type === "file") {
@@ -60,7 +54,6 @@ export async function getRepoFileTree(
         size: item.size,
       });
     } else if (item.type === "dir") {
-      // Recursively get files from subdirectories
       const subFiles = await getRepoFileTree(
         owner,
         repo,
@@ -77,7 +70,7 @@ export async function getRepoFileTree(
 }
 
 /**
- * Filter relevant files for analysis (skip common files like node_modules, etc.)
+ * Filter relevant files for analysis
  */
 export function filterRelevantFiles(
   files: Array<{ path: string; type: string; size?: number }>,
@@ -99,35 +92,13 @@ export function filterRelevantFiles(
   ];
 
   const relevantExtensions = [
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    ".py",
-    ".go",
-    ".rs",
-    ".java",
-    ".php",
-    ".rb",
-    ".vue",
-    ".svelte",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".toml",
-    ".config.js",
-    ".config.ts",
-    "Dockerfile",
-    "Procfile"
+    ".js", ".ts", ".jsx", ".tsx", ".py", ".go", ".rs", ".java", ".php", ".rb",
+    ".vue", ".svelte", ".json", ".yaml", ".yml", ".toml", ".config.js", ".config.ts",
+    "Dockerfile", "Procfile"
   ];
 
   const filtered = files.filter((file) => {
-    // Skip ignored paths
-    if (ignorePaths.some((ignore) => file.path.includes(ignore))) {
-      return false;
-    }
-
-    // Include files with relevant extensions or config files
+    if (ignorePaths.some((ignore) => file.path.includes(ignore))) return false;
     return (
       relevantExtensions.some((ext) => file.path.endsWith(ext)) ||
       file.path.includes("config") ||
@@ -137,17 +108,9 @@ export function filterRelevantFiles(
     );
   });
 
-  // Sort by relevance (config files first, then by path)
   filtered.sort((a, b) => {
-    const aIsConfig =
-      a.path.includes("config") ||
-      a.path.includes("wrangler") ||
-      a.path.includes("package.json");
-    const bIsConfig =
-      b.path.includes("config") ||
-      b.path.includes("wrangler") ||
-      b.path.includes("package.json");
-
+    const aIsConfig = a.path.includes("config") || a.path.includes("wrangler") || a.path.includes("package.json");
+    const bIsConfig = b.path.includes("config") || b.path.includes("wrangler") || b.path.includes("package.json");
     if (aIsConfig && !bIsConfig) return -1;
     if (!aIsConfig && bIsConfig) return 1;
     return a.path.localeCompare(b.path);
@@ -157,8 +120,7 @@ export function filterRelevantFiles(
 }
 
 /**
- * Analyze repository and generate questions using Worker AI 
- * Enhanced with Cloudflare Docs Retrieval (llms.txt)
+ * Analyze repository and generate questions using Worker AI & Cloudflare Docs
  */
 export async function analyzeRepoAndGenerateQuestions(
   ai: Ai,
@@ -167,8 +129,9 @@ export async function analyzeRepoAndGenerateQuestions(
   token: string,
   maxFiles: number = 50
 ): Promise<DetailedQuestion[]> {
-  // --- Phase 1: Repository Context Extraction ---
-  console.log(`[Analyzer] Phase 1: Fetching repo files for ${owner}/${repo}...`);
+  console.log(`[Analyzer] Analyzing ${owner}/${repo}...`);
+
+  // 1. Fetch Repository Files
   const allFiles = await getRepoFileTree(owner, repo, token);
   const relevantFiles = filterRelevantFiles(allFiles, maxFiles);
 
@@ -185,114 +148,100 @@ export async function analyzeRepoAndGenerateQuestions(
       }
     })
   );
-  const validFiles = fileContents.filter((f) => f !== null);
-  const repoContext = validFiles.map((f) => `\n=== ${f!.path} ===\n${f!.content.substring(0, 1500)}...`).join("\n");
+  const validFiles = fileContents.filter((f) => f !== null) as Array<{ path: string; content: string }>;
+  const repoContext = validFiles.map((f) => `\n=== ${f.path} ===\n${f.content.substring(0, 1500)}...`).join("\n");
 
-
-  // --- Phase 2: Stack Detection & Doc Selection ---
-  console.log(`[Analyzer] Phase 2: Identifying stack and selecting relevant docs...`);
-  
-  // Fetch the master docs index
-  const allDocSections = await fetchCloudflareDocsIndex();
-  
-  // Flatten for AI selection (title + specific links)
-  const docsSummary = allDocSections.map(s => 
-    `Product: ${s.title}\nPages: ${s.links.slice(0, 5).map(l => l.title).join(", ")}`
-  ).join("\n\n");
-
-  const docSelectionPrompt = `You are a Cloudflare Solutions Architect.
-  
-  REPO CONTEXT:
-  ${repoContext.substring(0, 5000)} // Truncated for token limits
-
-  AVAILABLE CLOUDFLARE DOCUMENTATION SECTIONS:
-  ${docsSummary}
-
-  Identify the specific technology stack of the repository (Language, Framework, Database).
-  Then, select the 3-5 most relevant Cloudflare Product Documentation URLs that would help migrate this specific stack.
-  
-  Example:
-  - If Repo uses Postgres -> Select Hyperdrive or D1 docs.
-  - If Repo uses Express/Node -> Select Workers or Workers VPC docs.
-  - If Repo uses Python -> Select Python Workers docs.
-  `;
-
-  const docSelectionSchema = {
-    type: "object",
-    properties: {
-      detected_stack: { type: "string" },
-      relevant_doc_urls: { 
-        type: "array", 
-        items: { type: "string" },
-        description: "Full URLs to the relevant documentation pages"
-      }
-    },
-    required: ["detected_stack", "relevant_doc_urls"],
-    additionalProperties: false
-  };
-
-  let selectedDocsContent = "";
-  
+  // 2. Fetch Cloudflare Documentation Index (llms.txt)
+  let docsContext = "";
   try {
-    // Ask AI which docs to fetch
-    const selectionResult = await queryWorkerAIStructured(ai, docSelectionPrompt, docSelectionSchema);
+    console.log(`[Analyzer] Fetching Cloudflare Docs Index (llms.txt)...`);
+    const docSections = await fetchCloudflareDocsIndex();
     
-    // Resolve the selected titles/URLs against the real list (fuzzy match or direct if AI was good)
-    // For simplicity, we assume AI returns valid URLs or we match them against our index. 
-    // Here we'll try to find the URLs in our index if AI returned titles, or just use URLs.
+    // Summarize index for AI selection
+    const indexSummary = docSections.map(s => 
+      `Product: ${s.title}\nPages: ${s.links.slice(0, 5).map(l => l.title).join(", ")}`
+    ).join("\n\n");
+
+    // 3. Ask AI to select relevant documentation
+    const selectionPrompt = `You are a Solutions Architect. 
+    Analyze the repository context and the available Cloudflare documentation.
     
-    const targetUrls: string[] = [];
-    
-    // Helper to find URL in index
-    const findUrl = (hint: string) => {
-        for (const sec of allDocSections) {
-            for (const link of sec.links) {
-                if (link.url === hint || link.title === hint) return link.url;
-            }
+    REPO CONTEXT:
+    ${repoContext.substring(0, 4000)}
+
+    AVAILABLE DOCS:
+    ${indexSummary}
+
+    Identify the technology stack (e.g. React, Postgres, Python) and select 3-5 specific Cloudflare documentation URLs that are most relevant for migrating this specific stack.
+    For example:
+    - If Postgres found -> select Hyperdrive or D1 docs.
+    - If React found -> select Pages docs.
+    - If Express found -> select Workers docs.
+    `;
+
+    const selectionSchema = {
+      type: "object",
+      properties: {
+        stack_detected: { type: "string" },
+        relevant_urls: { 
+          type: "array", 
+          items: { type: "string" },
+          description: "List of full URLs to fetch"
         }
-        return hint.startsWith('http') ? hint : null;
+      },
+      required: ["relevant_urls"],
+      additionalProperties: false
     };
 
-    if (selectionResult.relevant_doc_urls) {
-        selectionResult.relevant_doc_urls.forEach((hint: string) => {
-            const url = findUrl(hint);
-            if (url) targetUrls.push(url);
-        });
+    const selection = await queryWorkerAIStructured(ai, selectionPrompt, selectionSchema);
+    
+    // Resolve URLs from the selection
+    const targetUrls: string[] = [];
+    if (selection.relevant_urls && Array.isArray(selection.relevant_urls)) {
+      // Helper to match title/url from our index
+      const findUrl = (hint: string) => {
+        for (const sec of docSections) {
+          for (const link of sec.links) {
+            if (link.url === hint || link.title === hint) return link.url;
+          }
+        }
+        return hint.startsWith('http') ? hint : null;
+      };
+
+      selection.relevant_urls.forEach((hint: string) => {
+        const url = findUrl(hint);
+        if (url) targetUrls.push(url);
+      });
     }
 
-    console.log(`[Analyzer] Selected Docs:`, targetUrls);
-
-    // --- Phase 3: Fetch Documentation Content ---
+    // 4. Fetch the selected documentation pages
     if (targetUrls.length > 0) {
-        const fetchedDocs = await fetchDocPages(targetUrls);
-        selectedDocsContent = fetchedDocs.map(d => `\n=== CLOUDFLARE DOCS: ${d.url} ===\n${d.content}`).join("\n");
+      console.log(`[Analyzer] Fetching ${targetUrls.length} doc pages...`);
+      const fetchedDocs = await fetchDocPages(targetUrls);
+      docsContext = fetchedDocs.map(d => `\n=== CLOUDFLARE DOCS (${d.url}) ===\n${d.content}`).join("\n");
     }
 
   } catch (error) {
-    console.error("Error in Doc Selection Phase:", error);
-    // Proceed without docs if this fails
+    console.warn("[Analyzer] Docs retrieval failed, proceeding with repo context only:", error);
   }
 
-
-  // --- Phase 4: Final Question Generation ---
-  console.log(`[Analyzer] Phase 4: Generating questions with Stack + Docs context...`);
-
-  const finalPrompt = `You are a Senior Cloud Architect. Generate deep, technical migration questions.
-
-  REPO STACK ANALYSIS:
+  // 5. Generate Specific Questions using Repo + Docs Context
+  const finalPrompt = `You are a Senior Cloud Architect.
+  
+  REPO ANALYSIS:
   ${repoContext}
 
-  RELEVANT CLOUDFLARE DOCUMENTATION (Context Source):
-  ${selectedDocsContent}
+  RELEVANT CLOUDFLARE DOCUMENTATION:
+  ${docsContext}
 
   TASK:
-  Generate 3-5 highly specific questions to ask the Cloudflare MCP.
-  The questions must be grounded in the Repo's actual code and the provided Cloudflare Docs.
+  Generate 3-5 highly specific, technical questions to ask the Cloudflare MCP about migrating this repository.
   
-  Rules:
-  1. Do NOT ask generic "Can I run this?".
-  2. Ask "How do I implement [Repo Feature X] using [Cloudflare Feature Y described in docs]?".
-  3. If the repo uses a specific library (e.g. 'pg'), ask how to use it with the specific Cloudflare binding found in the docs (e.g. Hyperdrive).
+  GUIDELINES:
+  1. Do NOT ask generic questions like "Can I run this?".
+  2. Ask specifically about mapping [Repo Feature] to [Cloudflare Product found in Docs].
+  3. Example: "How do I migrate the 'pg' connection in 'db.js' to use Cloudflare Hyperdrive?"
+  4. Example: "How do I deploy the 'webpack.config.js' build output to Cloudflare Pages?"
   `;
 
   const finalSchema = {
@@ -335,13 +284,13 @@ export async function analyzeRepoAndGenerateQuestions(
     const result = await queryWorkerAIStructured(ai, finalPrompt, finalSchema);
     return result.questions;
   } catch (error) {
-    console.error("Error generating final questions:", error);
-    return generateFallbackQuestions(validFiles as any, owner, repo);
+    console.error("[Analyzer] AI generation failed, using fallback:", error);
+    return generateFallbackQuestions(validFiles, owner, repo);
   }
 }
 
 /**
- * Generate fallback questions if AI analysis fails
+ * Generate fallback questions (Pattern-based)
  */
 function generateFallbackQuestions(
   files: Array<{ path: string; content: string }>,
@@ -460,21 +409,41 @@ export function deduplicateQuestions(
 
 /**
  * Evaluate if existing questions are sufficient
- * Uses structured AI pipeline for decision making.
  */
 export async function evaluateQuestionSufficiency(
   ai: Ai,
   existingQuestions: DetailedQuestion[],
   newQuestions: DetailedQuestion[]
 ): Promise<{ sufficient: boolean; reasoning: string; recommendedQuestions: DetailedQuestion[] }> {
-  // [Implementation identical to previous version]
-  const prompt = `Evaluate question sufficiency.\nExisting: ${existingQuestions.length}\nNew: ${newQuestions.length}`;
+  const prompt = `You are evaluating whether existing questions about a codebase migration are sufficient.
+
+Existing Questions (${existingQuestions.length}):
+${existingQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
+
+Newly Generated Questions (${newQuestions.length}):
+${newQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
+
+Evaluate:
+1. Are the existing questions comprehensive enough?
+2. Do the new questions add significant value?
+3. Which questions should be included in the final set?`;
+
   const schema = {
     type: "object",
     properties: {
-      sufficient: { type: "boolean" },
-      reasoning: { type: "string" },
-      add_new_questions: { type: "array", items: { type: "integer" } }
+      sufficient: { 
+        type: "boolean",
+        description: "True if existing questions are sufficient, false otherwise"
+      },
+      reasoning: { 
+        type: "string",
+        description: "Brief explanation of the evaluation"
+      },
+      add_new_questions: { 
+        type: "array", 
+        items: { type: "integer" },
+        description: "Indices (0-based) of new questions to add to the existing set"
+      }
     },
     required: ["sufficient", "reasoning", "add_new_questions"],
     additionalProperties: false
@@ -483,13 +452,28 @@ export async function evaluateQuestionSufficiency(
   try {
     const evaluation = await queryWorkerAIStructured(ai, prompt, schema);
     const recommendedQuestions = [...existingQuestions];
-    if (evaluation.add_new_questions) {
+
+    if (evaluation.add_new_questions && Array.isArray(evaluation.add_new_questions)) {
       for (const index of evaluation.add_new_questions) {
-        if (index < newQuestions.length) recommendedQuestions.push(newQuestions[index]);
+        if (index < newQuestions.length) {
+          recommendedQuestions.push(newQuestions[index]);
+        }
       }
     }
-    return { sufficient: evaluation.sufficient, reasoning: evaluation.reasoning, recommendedQuestions };
-  } catch {
-    return { sufficient: existingQuestions.length > 0, reasoning: "Fallback", recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions) };
+
+    return {
+      sufficient: evaluation.sufficient || false,
+      reasoning: evaluation.reasoning || "AI evaluation completed",
+      recommendedQuestions,
+    };
+  } catch (error) {
+    console.error("Error evaluating questions:", error);
+    
+    // Fallback: merge and deduplicate
+    return {
+      sufficient: existingQuestions.length > 0,
+      reasoning: "Using automatic deduplication (fallback)",
+      recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions),
+    };
   }
 }
