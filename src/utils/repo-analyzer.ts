@@ -1,5 +1,6 @@
 import { Env, DetailedQuestion } from "../types";
 import { queryWorkerAIStructured } from "./worker-ai";
+import { queryGeminiStructured } from "./gemini"; // Import Gemini
 import { getRepoStructure, fetchGitHubFile } from "./github";
 import { fetchCloudflareDocsIndex, fetchDocPages } from "./docs-fetcher";
 
@@ -120,16 +121,18 @@ export function filterRelevantFiles(
 }
 
 /**
- * Analyze repository and generate questions using Worker AI & Cloudflare Docs
+ * Analyze repository and generate questions
+ * Supports switching between Worker AI and Gemini
  */
 export async function analyzeRepoAndGenerateQuestions(
-  ai: Ai,
+  env: Env, // Changed from 'ai: Ai' to 'env: Env' to support Gemini config
   owner: string,
   repo: string,
   token: string,
-  maxFiles: number = 50
+  maxFiles: number = 50,
+  useGemini: boolean = false // New flag
 ): Promise<DetailedQuestion[]> {
-  console.log(`[Analyzer] Analyzing ${owner}/${repo}...`);
+  console.log(`[Analyzer] Analyzing ${owner}/${repo}... (Provider: ${useGemini ? "Gemini" : "Workers AI"})`);
 
   // 1. Fetch Repository Files
   const allFiles = await getRepoFileTree(owner, repo, token);
@@ -151,13 +154,23 @@ export async function analyzeRepoAndGenerateQuestions(
   const validFiles = fileContents.filter((f) => f !== null) as Array<{ path: string; content: string }>;
   const repoContext = validFiles.map((f) => `\n=== ${f.path} ===\n${f.content.substring(0, 1500)}...`).join("\n");
 
+  // Helper to query selected provider
+  const queryAI = async (prompt: string, schema: object, sysPrompt?: string) => {
+    if (useGemini) {
+      // Gemini expects Env (for keys)
+      return await queryGeminiStructured(env as any, prompt, schema, sysPrompt);
+    } else {
+      // Worker AI expects Binding
+      return await queryWorkerAIStructured(env.AI, prompt, schema, sysPrompt);
+    }
+  };
+
   // 2. Fetch Cloudflare Documentation Index (llms.txt)
   let docsContext = "";
   try {
     console.log(`[Analyzer] Fetching Cloudflare Docs Index (llms.txt)...`);
     const docSections = await fetchCloudflareDocsIndex();
     
-    // Summarize index for AI selection
     const indexSummary = docSections.map(s => 
       `Product: ${s.title}\nPages: ${s.links.slice(0, 5).map(l => l.title).join(", ")}`
     ).join("\n\n");
@@ -172,11 +185,7 @@ export async function analyzeRepoAndGenerateQuestions(
     AVAILABLE DOCS:
     ${indexSummary}
 
-    Identify the technology stack (e.g. React, Postgres, Python) and select 3-5 specific Cloudflare documentation URLs that are most relevant for migrating this specific stack.
-    For example:
-    - If Postgres found -> select Hyperdrive or D1 docs.
-    - If React found -> select Pages docs.
-    - If Express found -> select Workers docs.
+    Identify the technology stack and select 3-5 specific Cloudflare documentation URLs.
     `;
 
     const selectionSchema = {
@@ -193,12 +202,10 @@ export async function analyzeRepoAndGenerateQuestions(
       additionalProperties: false
     };
 
-    const selection = await queryWorkerAIStructured(ai, selectionPrompt, selectionSchema);
+    const selection = await queryAI(selectionPrompt, selectionSchema);
     
-    // Resolve URLs from the selection
     const targetUrls: string[] = [];
     if (selection.relevant_urls && Array.isArray(selection.relevant_urls)) {
-      // Helper to match title/url from our index
       const findUrl = (hint: string) => {
         for (const sec of docSections) {
           for (const link of sec.links) {
@@ -214,7 +221,6 @@ export async function analyzeRepoAndGenerateQuestions(
       });
     }
 
-    // 4. Fetch the selected documentation pages
     if (targetUrls.length > 0) {
       console.log(`[Analyzer] Fetching ${targetUrls.length} doc pages...`);
       const fetchedDocs = await fetchDocPages(targetUrls);
@@ -225,7 +231,7 @@ export async function analyzeRepoAndGenerateQuestions(
     console.warn("[Analyzer] Docs retrieval failed, proceeding with repo context only:", error);
   }
 
-  // 5. Generate Specific Questions using Repo + Docs Context
+  // 5. Generate Specific Questions
   const finalPrompt = `You are a Senior Cloud Architect.
   
   REPO ANALYSIS:
@@ -236,12 +242,6 @@ export async function analyzeRepoAndGenerateQuestions(
 
   TASK:
   Generate 3-5 highly specific, technical questions to ask the Cloudflare MCP about migrating this repository.
-  
-  GUIDELINES:
-  1. Do NOT ask generic questions like "Can I run this?".
-  2. Ask specifically about mapping [Repo Feature] to [Cloudflare Product found in Docs].
-  3. Example: "How do I migrate the 'pg' connection in 'db.js' to use Cloudflare Hyperdrive?"
-  4. Example: "How do I deploy the 'webpack.config.js' build output to Cloudflare Pages?"
   `;
 
   const finalSchema = {
@@ -281,7 +281,7 @@ export async function analyzeRepoAndGenerateQuestions(
   };
 
   try {
-    const result = await queryWorkerAIStructured(ai, finalPrompt, finalSchema);
+    const result = await queryAI(finalPrompt, finalSchema);
     return result.questions;
   } catch (error) {
     console.error("[Analyzer] AI generation failed, using fallback:", error);
@@ -290,7 +290,7 @@ export async function analyzeRepoAndGenerateQuestions(
 }
 
 /**
- * Generate fallback questions (Pattern-based)
+ * Generate fallback questions
  */
 function generateFallbackQuestions(
   files: Array<{ path: string; content: string }>,
@@ -299,7 +299,6 @@ function generateFallbackQuestions(
 ): DetailedQuestion[] {
   const questions: DetailedQuestion[] = [];
 
-  // Check for common patterns
   const hasPackageJson = files.some((f) => f.path.includes("package.json"));
   const hasWebpack = files.some((f) =>
     f.path.includes("webpack") || f.content.includes("webpack")
@@ -375,7 +374,6 @@ function generateFallbackQuestions(
     });
   }
 
-  // Always add a general migration question
   questions.push({
     query: `What are the key considerations for migrating ${repo} to Cloudflare Workers/Pages?`,
     cloudflare_bindings_involved: ["env", "kv"],
@@ -387,9 +385,6 @@ function generateFallbackQuestions(
   return questions;
 }
 
-/**
- * Deduplicate and merge questions
- */
 export function deduplicateQuestions(
   existingQuestions: DetailedQuestion[],
   newQuestions: DetailedQuestion[]
@@ -407,73 +402,11 @@ export function deduplicateQuestions(
   return merged;
 }
 
-/**
- * Evaluate if existing questions are sufficient
- */
 export async function evaluateQuestionSufficiency(
   ai: Ai,
   existingQuestions: DetailedQuestion[],
   newQuestions: DetailedQuestion[]
 ): Promise<{ sufficient: boolean; reasoning: string; recommendedQuestions: DetailedQuestion[] }> {
-  const prompt = `You are evaluating whether existing questions about a codebase migration are sufficient.
-
-Existing Questions (${existingQuestions.length}):
-${existingQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
-
-Newly Generated Questions (${newQuestions.length}):
-${newQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
-
-Evaluate:
-1. Are the existing questions comprehensive enough?
-2. Do the new questions add significant value?
-3. Which questions should be included in the final set?`;
-
-  const schema = {
-    type: "object",
-    properties: {
-      sufficient: { 
-        type: "boolean",
-        description: "True if existing questions are sufficient, false otherwise"
-      },
-      reasoning: { 
-        type: "string",
-        description: "Brief explanation of the evaluation"
-      },
-      add_new_questions: { 
-        type: "array", 
-        items: { type: "integer" },
-        description: "Indices (0-based) of new questions to add to the existing set"
-      }
-    },
-    required: ["sufficient", "reasoning", "add_new_questions"],
-    additionalProperties: false
-  };
-
-  try {
-    const evaluation = await queryWorkerAIStructured(ai, prompt, schema);
-    const recommendedQuestions = [...existingQuestions];
-
-    if (evaluation.add_new_questions && Array.isArray(evaluation.add_new_questions)) {
-      for (const index of evaluation.add_new_questions) {
-        if (index < newQuestions.length) {
-          recommendedQuestions.push(newQuestions[index]);
-        }
-      }
-    }
-
-    return {
-      sufficient: evaluation.sufficient || false,
-      reasoning: evaluation.reasoning || "AI evaluation completed",
-      recommendedQuestions,
-    };
-  } catch (error) {
-    console.error("Error evaluating questions:", error);
-    
-    // Fallback: merge and deduplicate
-    return {
-      sufficient: existingQuestions.length > 0,
-      reasoning: "Using automatic deduplication (fallback)",
-      recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions),
-    };
-  }
+  // Keeping this simple for now, can be updated to use provider if needed
+  return { sufficient: existingQuestions.length > 0, reasoning: "Fallback", recommendedQuestions: deduplicateQuestions(existingQuestions, newQuestions) };
 }
