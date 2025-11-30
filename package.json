@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "bunx wrangler dev",
     "build": "echo 'No build step needed for this worker setup'",
-    "deploy": "bunx wrangler deploy",
+    "generate:migration": "bunx drizzle-kit generate",
+    "migrate:remote": "bunx wrangler d1 migrations apply ask-cloudflare-mcp --remote",
+    "deploy": "bunx drizzle-kit generate && bunx wrangler d1 migrations apply ask-cloudflare-mcp --remote && bunx wrangler deploy",
     "tail": "bunx wrangler tail",
     "types": "bunx wrangler types",
     "test": "bun test"
