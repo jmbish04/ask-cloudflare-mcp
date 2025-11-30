@@ -1,6 +1,6 @@
 import { Env, WSMessage, MCPRequest, MCPResponse } from "../types";
-import { queryMCPStream, createMCPResponse } from "../utils/mcp-client";
-import { rewriteQuestionForMCP, streamWorkerAI } from "../utils/worker-ai";
+import { createMCPResponse } from "../utils/mcp-client";
+import { rewriteQuestionForMCP } from "../utils/worker-ai";
 
 /**
  * Handle WebSocket connections for real-time MCP and API communication
