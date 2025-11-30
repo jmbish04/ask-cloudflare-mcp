@@ -89,6 +89,24 @@ async function handleMCPRequest(
                   required: ["query"],
                 },
               },
+              {
+                name: "analyze_github_pr",
+                description: "Analyze GitHub Pull Request comments for Cloudflare-specific solutions. Extracts code comments (optionally filtered by author like 'gemini-code-assist'), identifies Cloudflare-related comments using Worker AI, generates relevant questions, and queries Cloudflare documentation for answers.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    pr_url: {
+                      type: "string",
+                      description: "GitHub Pull Request URL (e.g., https://github.com/owner/repo/pull/123)",
+                    },
+                    comment_filter: {
+                      type: "string",
+                      description: "Optional filter to only include comments from specific author (e.g., 'gemini-code-assist', 'copilot')",
+                    },
+                  },
+                  required: ["pr_url"],
+                },
+              },
             ],
           },
           undefined,
@@ -130,6 +148,42 @@ async function handleMCPRequest(
                 {
                   type: "text",
                   text: JSON.stringify(mcpResponse, null, 2),
+                },
+              ],
+            },
+            undefined,
+            request.id
+          );
+          ws.send(JSON.stringify(resultResponse));
+        } else if (request.params?.name === "analyze_github_pr") {
+          const { pr_url, comment_filter } = request.params.arguments || {};
+
+          // Send status update
+          const statusMsg: WSMessage = {
+            type: "status",
+            data: { status: "processing", action: "analyzing PR" },
+            timestamp: new Date().toISOString(),
+          };
+          ws.send(JSON.stringify(statusMsg));
+
+          // Call the PR analyze endpoint internally
+          const apiResponse = await fetch(new URL("/api/questions/pr-analyze", env.MCP_API_URL).toString(), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ pr_url, comment_filter }),
+          }).then((r) => r.json()).catch((error) => ({
+            error: error.message,
+          }));
+
+          // Send result
+          const resultResponse: MCPResponse = createMCPResponse(
+            {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(apiResponse, null, 2),
                 },
               ],
             },

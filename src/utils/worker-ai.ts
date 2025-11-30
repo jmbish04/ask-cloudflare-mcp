@@ -129,6 +129,80 @@ Respond in JSON format:
 }
 
 /**
+ * Analyze if a code comment is related to Cloudflare and generate questions
+ */
+export async function analyzeCommentForCloudflare(
+  ai: Ai,
+  comment: string,
+  context?: {
+    filePath?: string;
+    line?: number;
+  }
+): Promise<{
+  isCloudflareRelated: boolean;
+  cloudflareContext?: string;
+  questions: string[];
+}> {
+  const systemPrompt = `You are a Cloudflare infrastructure expert. Analyze code comments to determine if they relate to Cloudflare-specific solutions, services, or integrations.`;
+
+  let prompt = `Code Comment: ${comment}\n\n`;
+
+  if (context?.filePath) {
+    prompt += `File: ${context.filePath}\n`;
+  }
+  if (context?.line) {
+    prompt += `Line: ${context.line}\n`;
+  }
+
+  prompt += `\nAnalyze if this comment relates to Cloudflare solutions such as:
+- Cloudflare Workers
+- Cloudflare Pages
+- D1 (database)
+- KV (key-value store)
+- R2 (object storage)
+- Durable Objects
+- Queues
+- AI bindings
+- Analytics Engine
+- Email routing
+- Stream
+- Images
+- Workers AI
+- Vectorize
+- Hyperdrive
+- Browser rendering
+- Any other Cloudflare service or integration
+
+If it IS related to Cloudflare, generate 2-4 specific technical questions about the comment that would benefit from querying Cloudflare documentation.
+
+Respond in JSON format:
+{
+  "isCloudflareRelated": true/false,
+  "cloudflareContext": "Brief description of which Cloudflare service/feature is involved (if related)",
+  "questions": ["question 1", "question 2", ...]
+}`;
+
+  const response = await queryWorkerAI(ai, prompt, systemPrompt);
+
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(response);
+    return {
+      isCloudflareRelated: parsed.isCloudflareRelated || false,
+      cloudflareContext: parsed.cloudflareContext,
+      questions: parsed.questions || [],
+    };
+  } catch (error) {
+    // If not valid JSON, assume not Cloudflare-related
+    console.error("Failed to parse Cloudflare analysis response:", error);
+    return {
+      isCloudflareRelated: false,
+      questions: [],
+    };
+  }
+}
+
+/**
  * Stream Worker AI response
  */
 export async function streamWorkerAI(

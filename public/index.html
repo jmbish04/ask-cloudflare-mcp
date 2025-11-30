@@ -255,6 +255,12 @@
         <div class="content">
             <!-- Quick Links -->
             <div class="quick-links">
+                <a href="/sessions.html" class="link-card">
+                    <div class="icon">📊</div>
+                    <h3>Session Dashboard</h3>
+                    <p>View and manage your API sessions</p>
+                </a>
+
                 <a href="/swagger" class="link-card">
                     <div class="icon">📖</div>
                     <h3>Interactive API Docs</h3>
@@ -329,7 +335,27 @@
                     <li>
                         <span class="method post">POST</span>
                         <span class="path">/api/questions/auto-analyze</span>
-                        <span class="description">🆕 Auto-analyze GitHub repo, generate questions with AI, cache in KV, and process. Always answers: "Can this repo run on Cloudflare?"</span>
+                        <span class="description">Auto-analyze GitHub repo, generate questions with AI, cache in KV, and process. Always answers: "Can this repo run on Cloudflare?"</span>
+                    </li>
+                    <li>
+                        <span class="method post">POST</span>
+                        <span class="path">/api/questions/pr-analyze</span>
+                        <span class="description">🆕 Analyze GitHub PR comments for Cloudflare-specific solutions, generate questions, and get answers</span>
+                    </li>
+                    <li>
+                        <span class="method get">GET</span>
+                        <span class="path">/api/sessions</span>
+                        <span class="description">🆕 List all sessions with pagination</span>
+                    </li>
+                    <li>
+                        <span class="method get">GET</span>
+                        <span class="path">/api/sessions/:sessionId</span>
+                        <span class="description">🆕 Get session details including questions and action logs</span>
+                    </li>
+                    <li>
+                        <span class="method get">GET</span>
+                        <span class="path">/api/sessions/:sessionId/download</span>
+                        <span class="description">🆕 Download session data as JSON</span>
                     </li>
                     <li>
                         <span class="method get">GET</span>
