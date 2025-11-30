@@ -255,6 +255,18 @@
         <div class="content">
             <!-- Quick Links -->
             <div class="quick-links">
+                <a href="/sessions.html" class="link-card">
+                    <div class="icon">📊</div>
+                    <h3>Session Dashboard</h3>
+                    <p>View and manage your API sessions</p>
+                </a>
+
+                <a href="/stream-demo.html" class="link-card">
+                    <div class="icon">⚡</div>
+                    <h3>Streaming Demo</h3>
+                    <p>Real-time terminal-style progress updates</p>
+                </a>
+
                 <a href="/swagger" class="link-card">
                     <div class="icon">📖</div>
                     <h3>Interactive API Docs</h3>
@@ -297,12 +309,22 @@
                     <div class="feature">
                         <div class="icon">🔗</div>
                         <h4>GitHub</h4>
-                        <p>Fetch code context from repositories</p>
+                        <p>Fetch code context from repositories and analyze PRs</p>
                     </div>
                     <div class="feature">
                         <div class="icon">⚡</div>
-                        <h4>Real-time</h4>
-                        <p>WebSocket support for streaming responses</p>
+                        <h4>HTTP Streaming</h4>
+                        <p>Server-Sent Events with real-time progress updates</p>
+                    </div>
+                    <div class="feature">
+                        <div class="icon">🔌</div>
+                        <h4>WebSocket/MCP</h4>
+                        <p>Full MCP server support with tools</p>
+                    </div>
+                    <div class="feature">
+                        <div class="icon">💾</div>
+                        <h4>Session Tracking</h4>
+                        <p>D1 database with Drizzle ORM for full history</p>
                     </div>
                 </div>
             </div>
@@ -329,7 +351,28 @@
                     <li>
                         <span class="method post">POST</span>
                         <span class="path">/api/questions/auto-analyze</span>
-                        <span class="description">🆕 Auto-analyze GitHub repo, generate questions with AI, cache in KV, and process. Always answers: "Can this repo run on Cloudflare?"</span>
+                        <span class="description">Auto-analyze GitHub repo, generate questions with AI, cache in KV, and process. Always answers: "Can this repo run on Cloudflare?"</span>
+                    </li>
+                    <li>
+                        <span class="method post">POST</span>
+                        <span class="path">/api/questions/pr-analyze</span>
+                        <span class="description">🆕 Analyze GitHub PR comments for Cloudflare-specific solutions, generate questions, and get answers</span>
+                        <span class="description" style="display:block; margin-top:5px; color:#ffa500;">⚡ Add <code style="background:#333;padding:2px 6px;border-radius:3px;">?stream=true</code> for real-time progress updates via Server-Sent Events</span>
+                    </li>
+                    <li>
+                        <span class="method get">GET</span>
+                        <span class="path">/api/sessions</span>
+                        <span class="description">🆕 List all sessions with pagination</span>
+                    </li>
+                    <li>
+                        <span class="method get">GET</span>
+                        <span class="path">/api/sessions/:sessionId</span>
+                        <span class="description">🆕 Get session details including questions and action logs</span>
+                    </li>
+                    <li>
+                        <span class="method get">GET</span>
+                        <span class="path">/api/sessions/:sessionId/download</span>
+                        <span class="description">🆕 Download session data as JSON</span>
                     </li>
                     <li>
                         <span class="method get">GET</span>

@@ -12,6 +12,18 @@ import {
   PRAnalyzeResponseSchema,
   DetailedQuestion
 } from "../types";
+
+const SessionSchema = z.object({
+  id: z.number(),
+  sessionId: z.string(),
+  timestamp: z.string(),
+  title: z.string().nullable(),
+  endpointType: z.string(),
+  repoUrl: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 import { queryMCP } from "../utils/mcp-client";
 import { rewriteQuestionForMCP as rewriteWorker, analyzeResponseAndGenerateFollowUps as analyzeWorker, analyzeCommentForCloudflare as analyzeCommentWorker } from "../utils/worker-ai";
 import { rewriteQuestionForMCP as rewriteGemini, analyzeResponseAndGenerateFollowUps as analyzeGemini } from "../utils/gemini";
@@ -230,7 +242,7 @@ app.openapi(detailedQuestionsRoute, async (c) => {
             codeSnippets = await extractCodeSnippets(
               repo_owner,
               repo_name,
-              question.relevant_code_files,
+              question.relevant_code_files as any,
               env.GITHUB_TOKEN
             );
           }
@@ -328,7 +340,8 @@ const autoAnalyzeRoute = createRoute({
         "application/json": {
           schema: AutoAnalyzeResponseSchema,
         },
-        "text/plain": { schema: z.string() }
+        "text/plain": { schema: z.string() },
+        "text/event-stream": { schema: z.string() }
       },
     },
     400: {
@@ -395,7 +408,7 @@ app.openapi(autoAnalyzeRoute, async (c) => {
         if (questions.length === 0) {
           await log(`🧠 Cache miss. Analyzing repository structure and docs...`);
           await log(`   (This may take 10-20 seconds...)`);
-
+          
           // Pass use_gemini flag to repo analyzer
           const generatedQuestions = await analyzeRepoAndGenerateQuestions(
             env, // Pass full env
@@ -439,7 +452,7 @@ app.openapi(autoAnalyzeRoute, async (c) => {
           }
         }
         await log(`\n🎉 Analysis Complete!`);
-      });
+      }) as any; // Cast to any to avoid type mismatch with zod-openapi
     }
 
     // --- Standard JSON Logic (Non-Streaming) ---
@@ -588,6 +601,7 @@ const prAnalyzeRoute = createRoute({
         "application/json": {
           schema: PRAnalyzeResponseSchema,
         },
+        "text/event-stream": { schema: z.string() }
       },
     },
     400: {
@@ -846,7 +860,7 @@ app.openapi(prAnalyzeRoute, async (c) => {
 
     // If streaming requested, use streaming handler
     if (wantsStream) {
-      return handlePRAnalyzeStream(c, env, pr_url, comment_filter, owner, repo, prNumber);
+      return handlePRAnalyzeStream(c, env, pr_url, comment_filter, owner, repo, prNumber) as any;
     }
 
     // Create session for tracking
@@ -1036,10 +1050,20 @@ const listSessionsRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            sessions: z.array(z.any()),
+            sessions: z.array(SessionSchema),
             total: z.number(),
             limit: z.number(),
             offset: z.number(),
+          }),
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
           }),
         },
       },
@@ -1061,7 +1085,7 @@ app.openapi(listSessionsRoute, async (c) => {
       total: sessions.length,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
-    });
+    }) as any;
   } catch (error) {
     console.error("Error listing sessions:", error);
     return c.json(
@@ -1092,7 +1116,7 @@ const getSessionRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            session: z.any(),
+            session: SessionSchema,
             questions: z.array(z.any()),
             action_logs: z.array(z.any()),
           }),
@@ -1101,6 +1125,16 @@ const getSessionRoute = createRoute({
     },
     404: {
       description: "Session not found",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
+          }),
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
       content: {
         "application/json": {
           schema: z.object({
@@ -1128,7 +1162,7 @@ app.openapi(getSessionRoute, async (c) => {
       session,
       questions,
       action_logs: actionLogs,
-    });
+    }) as any;
   } catch (error) {
     console.error("Error getting session:", error);
     return c.json(
@@ -1172,6 +1206,16 @@ const downloadSessionRoute = createRoute({
         },
       },
     },
+    500: {
+      description: "Internal server error",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
+          }),
+        },
+      },
+    },
   },
 });
 
@@ -1190,18 +1234,18 @@ app.openapi(downloadSessionRoute, async (c) => {
     const parsedQuestions = questions.map((q) => ({
       id: q.id,
       question: q.question,
-      metadata: q.meta_json ? JSON.parse(q.meta_json) : null,
+      metadata: q.metaJson ? JSON.parse(q.metaJson) : null,
       response: JSON.parse(q.response),
-      source: q.question_source,
-      created_at: q.created_at,
+      source: q.questionSource,
+      created_at: q.createdAt,
     }));
 
     const downloadData = {
       session: {
-        id: session.session_id,
+        id: session.sessionId,
         title: session.title,
-        endpoint_type: session.endpoint_type,
-        repo_url: session.repo_url,
+        endpoint_type: session.endpointType,
+        repo_url: session.repoUrl,
         timestamp: session.timestamp,
       },
       questions: parsedQuestions,
@@ -1210,7 +1254,7 @@ app.openapi(downloadSessionRoute, async (c) => {
 
     // Set headers for file download
     c.header("Content-Disposition", `attachment; filename="session-${sessionId}.json"`);
-    return c.json(downloadData);
+    return c.json(downloadData) as any;
   } catch (error) {
     console.error("Error downloading session:", error);
     return c.json(

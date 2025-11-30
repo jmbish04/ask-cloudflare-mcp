@@ -18,6 +18,14 @@ binding = "QUESTIONS_KV"
 id = "10054da1a5e04387ad6734c0432fa289"
 preview_id = "10054da1a5e04387ad6734c0432fa289"
 
+# D1 database for session management and logging
+[[d1_databases]]
+binding = "DB"
+database_name = "ask-cloudflare-mcp"
+database_id = "66879f94-f773-4da3-819c-c56b2210cbb5"
+migrations_dir = "migrations"
+migrations_table = "__drizzle_migrations__"
+
 # Secrets (set these using: wrangler secret put GITHUB_TOKEN)
 # GITHUB_TOKEN - GitHub Personal Access Token (readonly)
 

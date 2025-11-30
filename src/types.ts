@@ -7,6 +7,7 @@ export interface Env {
   MCP_API_URL: string;
   ASSETS: Fetcher;
   QUESTIONS_KV: KVNamespace;
+  DB: D1Database;
   // Gemini secrets
   CF_AIG_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
@@ -148,6 +149,72 @@ export const AutoAnalyzeResponseSchema = z.object({
   timestamp: z.string(),
 });
 
+// PR Analysis schema
+export const PRAnalyzeSchema = z.object({
+  pr_url: z.string().describe("GitHub Pull Request URL (e.g., https://github.com/owner/repo/pull/123)"),
+  comment_filter: z.string().optional().describe("Filter comments by author (e.g., 'gemini-code-assist', 'copilot')"),
+});
+
+export const PRAnalyzeResponseSchema = z.object({
+  session_id: z.string(),
+  pr_url: z.string(),
+  repo_owner: z.string(),
+  repo_name: z.string(),
+  pr_number: z.number(),
+  comments_extracted: z.number(),
+  cloudflare_related_comments: z.number(),
+  results: z.array(
+    z.object({
+      comment: z.object({
+        id: z.number(),
+        author: z.string(),
+        body: z.string(),
+        file_path: z.string().optional(),
+        line: z.number().optional(),
+      }),
+      is_cloudflare_related: z.boolean(),
+      cloudflare_context: z.string().optional(),
+      questions_generated: z.array(z.string()).optional(),
+      answers: z.array(z.any()).optional(),
+    })
+  ),
+  timestamp: z.string(),
+});
+
+// Database record types
+export interface SessionRecord {
+  id: number;
+  session_id: string;
+  timestamp: string;
+  title: string | null;
+  endpoint_type: 'simple-questions' | 'detailed-questions' | 'auto-analyze' | 'pr-analyze';
+  repo_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionRecord {
+  id: number;
+  session_id: number;
+  question: string;
+  meta_json: string | null;
+  response: string;
+  question_source: 'user_provided' | 'ai_generated';
+  created_at: string;
+}
+
+export interface ActionLogRecord {
+  id: number;
+  session_id: number | null;
+  timestamp: string;
+  action_type: string;
+  action_description: string;
+  metadata_json: string | null;
+  has_error: number;
+  error_message: string | null;
+  created_at: string;
+}
+
 // Types for the response
 export type SimpleQuestion = z.infer<typeof SimpleQuestionSchema>;
 export type SimpleQuestions = z.infer<typeof SimpleQuestionsSchema>;
@@ -158,3 +225,5 @@ export type SimpleResponse = z.infer<typeof SimpleResponseSchema>;
 export type DetailedResponse = z.infer<typeof DetailedResponseSchema>;
 export type AutoAnalyzeRepo = z.infer<typeof AutoAnalyzeRepoSchema>;
 export type AutoAnalyzeResponse = z.infer<typeof AutoAnalyzeResponseSchema>;
+export type PRAnalyze = z.infer<typeof PRAnalyzeSchema>;
+export type PRAnalyzeResponse = z.infer<typeof PRAnalyzeResponseSchema>;

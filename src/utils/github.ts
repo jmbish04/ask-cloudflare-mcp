@@ -23,7 +23,7 @@ export async function getDefaultBranch(
     throw new Error(`Failed to fetch repo info: ${response.status}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as any;
   return data.default_branch;
 }
 
@@ -236,25 +236,41 @@ export async function extractCodeSnippets(
 }
 
 /**
- * Fetch code review comments from a Pull Request
+ * Parse PR URL to extract owner, repo, and PR number
  */
-export async function getPRCodeComments(
+export function parsePRUrl(prUrl: string): { owner: string; repo: string; prNumber: number } | null {
+  const regex = /github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/;
+  const match = prUrl.match(regex);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    owner: match[1],
+    repo: match[2],
+    prNumber: parseInt(match[3], 10),
+  };
+}
+
+/**
+ * Get all comments from a PR (both review comments and issue comments)
+ */
+export async function getPRComments(
   owner: string,
   repo: string,
   prNumber: number,
   token: string
 ): Promise<Array<{
-  id: number;
+  author: string;
   body: string;
-  path: string;
-  line: number;
-  user: { login: string };
-  created_at: string;
+  file_path?: string;
+  line?: number;
+  comment_type: 'review' | 'issue';
 }>> {
-  // This endpoint gets comments on specific lines of code (review comments)
-  const url = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/comments`;
-
-  const response = await fetch(url, {
+  // Get review comments (inline code comments)
+  const reviewCommentsUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/comments`;
+  const reviewCommentsResponse = await fetch(reviewCommentsUrl, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -262,11 +278,66 @@ export async function getPRCodeComments(
     },
   });
 
-  if (!response.ok) {
+  if (!reviewCommentsResponse.ok) {
     throw new Error(
-      `GitHub API error (${response.status}): ${await response.text()}`
+      `GitHub API error (${reviewCommentsResponse.status}): ${await reviewCommentsResponse.text()}`
     );
   }
 
-  return await response.json();
+  const reviewComments = await reviewCommentsResponse.json() as any[];
+
+  // Get issue comments (general PR comments)
+  const issueCommentsUrl = `https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`;
+  const issueCommentsResponse = await fetch(issueCommentsUrl, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "Cloudflare-Worker-MCP",
+    },
+  });
+
+  if (!issueCommentsResponse.ok) {
+    throw new Error(
+      `GitHub API error (${issueCommentsResponse.status}): ${await issueCommentsResponse.text()}`
+    );
+  }
+
+  const issueComments = await issueCommentsResponse.json() as any[];
+
+  // Combine and normalize comments
+  const allComments = [
+    ...reviewComments.map((comment) => ({
+      id: comment.id,
+      author: comment.user?.login || "unknown",
+      body: comment.body || "",
+      file_path: comment.path,
+      line: comment.line || comment.original_line,
+      comment_type: 'review' as const,
+    })),
+    ...issueComments.map((comment) => ({
+      id: comment.id,
+      author: comment.user?.login || "unknown",
+      body: comment.body || "",
+      comment_type: 'issue' as const,
+    })),
+  ];
+
+  return allComments;
+}
+
+/**
+ * Filter comments by author (case-insensitive partial match)
+ */
+export function filterCommentsByAuthor(
+  comments: Array<{ author: string; [key: string]: any }>,
+  authorFilter?: string
+): Array<{ author: string; [key: string]: any }> {
+  if (!authorFilter) {
+    return comments;
+  }
+
+  const lowerFilter = authorFilter.toLowerCase();
+  return comments.filter((comment) =>
+    comment.author.toLowerCase().includes(lowerFilter)
+  );
 }
