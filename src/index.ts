@@ -100,7 +100,7 @@ app.get("/swagger", async (c) => {
                 dom_id: '#swagger-ui',
                 presets: [
                   SwaggerUIBundle.presets.apis,
-                  SwaggerUIBundle.SwaggerUIStandalonePreset
+                  SwaggerUIStandalonePreset
                 ],
                 layout: "BaseLayout"
               });
