@@ -4,10 +4,11 @@
   "description": "Cloudflare Worker that acts as both an API and MCP server with GitHub integration",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail",
-    "types": "wrangler types"
+    "dev": "bunx wrangler dev",
+    "deploy": "bunx wrangler deploy",
+    "tail": "bunx wrangler tail",
+    "types": "bunx wrangler types",
+    "test": "bun test"
   },
   "keywords": [
     "cloudflare",
