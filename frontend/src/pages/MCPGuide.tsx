@@ -1,6 +1,10 @@
 import { Card, CardBody, Code, Divider } from "@heroui/react";
 
 export const MCPGuide = () => {
+  // Use the injected environment variable or fallback to window location
+  const workerUrl = import.meta.env.VITE_WORKER_URL || window.location.origin;
+  const wsUrl = workerUrl.replace(/^http/, 'ws');
+
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
       <div className="text-center space-y-4">
@@ -41,7 +45,7 @@ export const MCPGuide = () => {
           <Divider className="my-4"/>
           
           <h4 className="font-bold">Connecting</h4>
-          <Code className="w-full">ws://your-worker-url/ws</Code>
+          <Code className="w-full">{`${wsUrl}/ws`}</Code>
           
           <h4 className="font-bold mt-4">Message Format</h4>
           <pre className="bg-default-100 p-4 rounded-lg overflow-x-auto text-sm">
@@ -61,4 +65,3 @@ export const MCPGuide = () => {
     </div>
   );
 };
-

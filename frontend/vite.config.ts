@@ -15,5 +15,8 @@ export default defineConfig({
   build: {
     outDir: '../public',
     emptyOutDir: true
+  },
+  define: {
+    'import.meta.env.VITE_WORKER_URL': JSON.stringify(process.env.WORKER_URL || 'https://ask-cloudflare-mcp.hacolby.workers.dev')
   }
 })

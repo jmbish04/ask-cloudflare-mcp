@@ -32,6 +32,7 @@ migrations_table = "__drizzle_migrations__"
 # Environment variables
 [vars]
 MCP_API_URL = "https://docs.mcp.cloudflare.com/mcp"
+WORKER_URL = "https://ask-cloudflare-mcp.hacolby.workers.dev"
 
 # Static assets
 [assets]

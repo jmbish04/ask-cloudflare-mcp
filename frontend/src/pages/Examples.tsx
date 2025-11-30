@@ -7,6 +7,9 @@ import {
 } from "@heroui/react";
 
 export const Examples = () => {
+  // Use the injected environment variable or fallback to window location
+  const workerUrl = import.meta.env.VITE_WORKER_URL || window.location.origin;
+
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
       <div className="text-center space-y-4">
@@ -20,7 +23,7 @@ export const Examples = () => {
         <CardBody>
           <p className="mb-4">Ask a straightforward technical question about Cloudflare Workers.</p>
           <Snippet symbol="$" className="w-full">
-{`curl -X POST https://your-worker-url/api/questions/simple \\
+{`curl -X POST ${workerUrl}/api/questions/simple \\
   -H "Content-Type: application/json" \\
   -d '{
     "questions": ["How do I use Durable Objects?"],
@@ -36,7 +39,7 @@ export const Examples = () => {
         <CardBody>
           <p className="mb-4">Analyze a GitHub repository for migration compatibility.</p>
           <Snippet symbol="$" className="w-full">
-{`curl -X POST https://your-worker-url/api/questions/auto-analyze?stream=true \\
+{`curl -X POST ${workerUrl}/api/questions/auto-analyze?stream=true \\
   -H "Content-Type: application/json" \\
   -d '{
     "repo_url": "https://github.com/owner/repo",
@@ -52,7 +55,7 @@ export const Examples = () => {
         <CardBody>
           <p className="mb-4">Analyze comments in a Pull Request for Cloudflare context.</p>
           <Snippet symbol="$" className="w-full">
-{`curl -X POST https://your-worker-url/api/questions/pr-analyze?stream=true \\
+{`curl -X POST ${workerUrl}/api/questions/pr-analyze?stream=true \\
   -H "Content-Type: application/json" \\
   -d '{
     "pr_url": "https://github.com/owner/repo/pull/123",
@@ -64,4 +67,3 @@ export const Examples = () => {
     </div>
   );
 };
-
