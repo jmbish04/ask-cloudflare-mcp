@@ -17,10 +17,10 @@ const pages = [
     color: "from-blue-500 to-cyan-500"
   },
   {
-    title: "Streaming Demo",
-    description: "Real-time terminal-style progress updates",
+    title: "Analysis Tools",
+    description: "Real-time analysis with live MCP responses",
     icon: "⚡",
-    path: "/streaming",
+    path: "/tools",
     color: "from-yellow-500 to-orange-500"
   },
   {

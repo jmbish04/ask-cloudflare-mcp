@@ -27,9 +27,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               Sessions
             </RouterLink>
           </NavbarItem>
-          <NavbarItem isActive={location.pathname === "/streaming"}>
-            <RouterLink to="/streaming" className={location.pathname === "/streaming" ? "text-primary" : "text-foreground"}>
-              Streaming
+          <NavbarItem isActive={location.pathname === "/tools"}>
+            <RouterLink to="/tools" className={location.pathname === "/tools" ? "text-primary" : "text-foreground"}>
+              Tools
             </RouterLink>
           </NavbarItem>
           <NavbarItem isActive={location.pathname === "/docs"}>

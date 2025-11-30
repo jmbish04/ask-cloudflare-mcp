@@ -71,6 +71,9 @@ const simpleQuestionsRoute = createRoute({
   summary: "Process simple array of questions",
   description: "Receives an array of questions, queries Cloudflare docs MCP, analyzes with Worker AI, and returns answers",
   request: {
+    query: z.object({
+      stream: z.string().optional(),
+    }),
     body: {
       content: {
         "application/json": {
@@ -86,6 +89,7 @@ const simpleQuestionsRoute = createRoute({
         "application/json": {
           schema: SimpleResponseSchema,
         },
+        "text/event-stream": { schema: z.string() }
       },
     },
     400: {
@@ -114,9 +118,116 @@ const simpleQuestionsRoute = createRoute({
 app.openapi(simpleQuestionsRoute, async (c) => {
   try {
     const { questions, use_gemini = false } = c.req.valid("json");
+    const streamMode = c.req.query("stream") === "true";
     const env = c.env;
     const provider = getProvider(use_gemini, env);
 
+    // Create session
+    const { sessionId, sessionDbId } = await createSession(env, 'simple-questions', {
+      title: questions.length > 0 ? `Simple Q: ${questions[0].substring(0, 30)}...` : 'Simple Questions',
+    });
+
+    // --- Streaming Logic ---
+    if (streamMode) {
+      const sse = createSSEStream();
+      c.header('Content-Type', 'text/event-stream');
+      c.header('Cache-Control', 'no-cache');
+      c.header('Connection', 'keep-alive');
+
+      (async () => {
+        try {
+          sse.sendProgress(`🚀 Starting processing for ${questions.length} simple questions...`);
+          sse.sendProgress(`🤖 Using AI Provider: ${use_gemini ? "Google Gemini 2.5 Flash" : "Cloudflare Workers AI"}`);
+
+          const results = [];
+          
+          for (const [index, question] of questions.entries()) {
+            sse.sendProgress(`\n📝 [${index + 1}/${questions.length}] Processing: "${question}"`);
+            
+            try {
+              // Step 1: Rewrite question
+              sse.sendProgress(`   🔄 Rewriting question...`);
+              const rewrittenQuestion = await provider.rewrite(question);
+              
+              // Step 2: Query MCP
+              sse.sendProgress(`   📚 Querying Cloudflare docs...`);
+              const mcpResponse = await queryMCP(rewrittenQuestion, undefined, env.MCP_API_URL);
+
+              // Step 3: Analyze and generate follow-ups
+              sse.sendProgress(`   🧠 Analyzing response...`);
+              const { analysis, followUpQuestions } = await provider.analyze(
+                question,
+                mcpResponse
+              );
+
+              // Record in DB
+              await addQuestion(
+                env.DB,
+                sessionDbId,
+                question,
+                mcpResponse,
+                'user_provided',
+                {
+                  rewritten_question: rewrittenQuestion,
+                  analysis,
+                  follow_up_questions: followUpQuestions
+                }
+              );
+
+              // Step 4: Process follow-up questions if any
+              let followUpAnswers: any[] = [];
+              if (followUpQuestions.length > 0) {
+                sse.sendProgress(`   🔗 Processing ${followUpQuestions.length} follow-up questions...`);
+                followUpAnswers = await Promise.all(
+                  followUpQuestions.map((fq) => queryMCP(fq, undefined, env.MCP_API_URL))
+                );
+              }
+
+              const result = {
+                original_question: question,
+                rewritten_question: rewrittenQuestion,
+                mcp_response: mcpResponse,
+                follow_up_questions: followUpQuestions,
+                follow_up_answers: followUpAnswers,
+                ai_analysis: analysis,
+              };
+              results.push(result);
+
+              // Send structured data event
+              sse.sendData(result, `✅ Completed question ${index + 1}`);
+            } catch (error) {
+              console.error(`Error processing question "${question}":`, error);
+              sse.sendError(error as Error);
+              results.push({
+                original_question: question,
+                rewritten_question: undefined,
+                mcp_response: { error: error instanceof Error ? error.message : "Unknown error" },
+                follow_up_questions: [],
+                follow_up_answers: [],
+                ai_analysis: undefined,
+              });
+            }
+          }
+          
+          sse.complete({
+            sessionId,
+            results,
+            total_processed: questions.length,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (error) {
+          console.error("Error in streaming simple questions:", error);
+          sse.sendError(error as Error);
+          sse.complete();
+        }
+      })();
+
+      return new Response(sse.stream, {
+        headers: getSSEHeaders(),
+      });
+    }
+
+    // --- Standard JSON Logic (Non-Streaming) ---
     const results = await Promise.all(
       questions.map(async (question) => {
         try {
@@ -130,6 +241,20 @@ app.openapi(simpleQuestionsRoute, async (c) => {
           const { analysis, followUpQuestions } = await provider.analyze(
             question,
             mcpResponse
+          );
+
+          // Record in DB
+          await addQuestion(
+            env.DB,
+            sessionDbId,
+            question,
+            mcpResponse,
+            'user_provided',
+            {
+              rewritten_question: rewrittenQuestion,
+              analysis,
+              follow_up_questions: followUpQuestions
+            }
           );
 
           // Step 4: Process follow-up questions if any
@@ -187,6 +312,9 @@ const detailedQuestionsRoute = createRoute({
   summary: "Process detailed questions with code context",
   description: "Receives detailed questions with code context, fetches code from GitHub, queries MCP with full context",
   request: {
+    query: z.object({
+      stream: z.string().optional(),
+    }),
     body: {
       content: {
         "application/json": {
@@ -202,6 +330,7 @@ const detailedQuestionsRoute = createRoute({
         "application/json": {
           schema: DetailedResponseSchema,
         },
+        "text/event-stream": { schema: z.string() }
       },
     },
     400: {
@@ -230,9 +359,122 @@ const detailedQuestionsRoute = createRoute({
 app.openapi(detailedQuestionsRoute, async (c) => {
   try {
     const { questions, repo_owner, repo_name, use_gemini = false } = c.req.valid("json");
+    const streamMode = c.req.query("stream") === "true";
     const env = c.env;
     const provider = getProvider(use_gemini, env);
 
+    // Create session
+    const { sessionId, sessionDbId } = await createSession(env, 'detailed-questions', {
+      repoUrl: repo_owner && repo_name ? `https://github.com/${repo_owner}/${repo_name}` : undefined,
+      titleContext: repo_owner && repo_name ? `${repo_owner}/${repo_name}` : undefined
+    });
+
+    // --- Streaming Logic ---
+    if (streamMode) {
+      return streamText(c, async (stream) => {
+        const log = async (msg: string) => await stream.write(msg + "\n");
+        await log(`🚀 Starting processing for ${questions.length} detailed questions...`);
+        if (repo_owner && repo_name) {
+          await log(`📂 Context: ${repo_owner}/${repo_name}`);
+        }
+        await log(`🤖 Using AI Provider: ${use_gemini ? "Google Gemini 2.5 Flash" : "Cloudflare Workers AI"}`);
+
+        const results = [];
+
+        for (const [index, question] of questions.entries()) {
+          await log(`\n📝 [${index + 1}/${questions.length}] Processing: "${question.query}"`);
+          
+          try {
+            // Step 1: Extract code snippets
+            let codeSnippets: any[] = [];
+            if (repo_owner && repo_name && question.relevant_code_files.length > 0) {
+              await log(`   🔍 Extracting code snippets...`);
+              codeSnippets = await extractCodeSnippets(
+                repo_owner,
+                repo_name,
+                question.relevant_code_files as any,
+                env.GITHUB_TOKEN
+              );
+            }
+
+            // Step 2: Rewrite question with full context
+            await log(`   🔄 Rewriting question with context...`);
+            const rewrittenQuestion = await provider.rewrite(question.query, {
+              bindings: question.cloudflare_bindings_involved,
+              libraries: question.node_libs_involved,
+              tags: question.tags,
+              codeSnippets,
+            });
+
+            // Step 3: Query MCP with context
+            await log(`   📚 Querying Cloudflare docs...`);
+            const context = `Cloudflare Migration Context - Bindings: ${question.cloudflare_bindings_involved.join(", ")}`;
+            const mcpResponse = await queryMCP(rewrittenQuestion, context, env.MCP_API_URL);
+
+            // Step 4: Analyze and generate follow-ups
+            await log(`   🧠 Analyzing response...`);
+            const { analysis, followUpQuestions } = await provider.analyze(
+              question.query,
+              mcpResponse
+            );
+
+            // Record in DB
+            await addQuestion(
+              env.DB,
+              sessionDbId,
+              question.query,
+              mcpResponse,
+              'user_provided',
+              {
+                rewritten_question: rewrittenQuestion,
+                analysis,
+                follow_up_questions: followUpQuestions,
+                code_snippets: codeSnippets,
+                bindings: question.cloudflare_bindings_involved
+              }
+            );
+
+            // Step 5: Process follow-up questions
+            let followUpAnswers: any[] = [];
+            if (followUpQuestions.length > 0) {
+              await log(`   🔗 Processing ${followUpQuestions.length} follow-up questions...`);
+              followUpAnswers = await Promise.all(
+                followUpQuestions.map((fq) => queryMCP(fq, context, env.MCP_API_URL))
+              );
+            }
+
+            results.push({
+              original_question: question,
+              code_snippets: codeSnippets,
+              rewritten_question: rewrittenQuestion,
+              mcp_response: mcpResponse,
+              follow_up_questions: followUpQuestions,
+              follow_up_answers: followUpAnswers,
+              ai_analysis: analysis,
+            });
+
+            await log(`   ✅ Completed question ${index + 1}`);
+          } catch (error) {
+            console.error(`Error processing detailed question "${question.query}":`, error);
+            await log(`   ❌ Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+            results.push({
+              original_question: question,
+              code_snippets: [],
+              rewritten_question: undefined,
+              mcp_response: { error: error instanceof Error ? error.message : "Unknown error" },
+              follow_up_questions: [],
+              follow_up_answers: [],
+              ai_analysis: undefined,
+            });
+          }
+        }
+
+        await log(`\n🎉 All questions processed!`);
+        await log(`📊 Session ID: ${sessionId}`);
+      }) as any;
+    }
+
+    // --- Standard JSON Logic (Non-Streaming) ---
     const results = await Promise.all(
       questions.map(async (question) => {
         try {
@@ -263,6 +505,22 @@ app.openapi(detailedQuestionsRoute, async (c) => {
           const { analysis, followUpQuestions } = await provider.analyze(
             question.query,
             mcpResponse
+          );
+
+          // Record in DB
+          await addQuestion(
+            env.DB,
+            sessionDbId,
+            question.query,
+            mcpResponse,
+            'user_provided',
+            {
+              rewritten_question: rewrittenQuestion,
+              analysis,
+              follow_up_questions: followUpQuestions,
+              code_snippets: codeSnippets,
+              bindings: question.cloudflare_bindings_involved
+            }
           );
 
           // Step 5: Process follow-up questions
@@ -385,74 +643,128 @@ app.openapi(autoAnalyzeRoute, async (c) => {
     // Select Provider
     const provider = getProvider(use_gemini, env);
 
+    // Create session
+    const { sessionId, sessionDbId } = await createSession(env, 'auto-analyze', {
+      repoUrl: repo_url,
+      titleContext: `${owner}/${repo}`
+    });
+
     // --- Streaming Logic ---
     if (streamMode) {
-      return streamText(c, async (stream) => {
-        const log = async (msg: string) => await stream.write(msg + "\n");
-        await log(`🚀 Starting analysis for ${owner}/${repo}...`);
-        await log(`🤖 Using AI Provider: ${use_gemini ? "Google Gemini 2.5 Flash" : "Cloudflare Workers AI"}`);
+      const sse = createSSEStream();
+      c.header('Content-Type', 'text/event-stream');
+      c.header('Cache-Control', 'no-cache');
+      c.header('Connection', 'keep-alive');
 
-        let questions: DetailedQuestion[] = [];
-        let cached = false;
+      (async () => {
+        try {
+          sse.sendProgress(`🚀 Starting analysis for ${owner}/${repo}...`);
+          sse.sendProgress(`🤖 Using AI Provider: ${use_gemini ? "Google Gemini 2.5 Flash" : "Cloudflare Workers AI"}`);
 
-        if (!force_refresh) {
-          await log(`🔍 Checking cache...`);
-          const cachedData = await env.QUESTIONS_KV.get(cacheKey, "json");
-          if (cachedData && Array.isArray(cachedData)) {
-            questions = cachedData as DetailedQuestion[];
-            cached = true;
-            await log(`✅ Found ${questions.length} cached questions.`);
+          let questions: DetailedQuestion[] = [];
+          let cached = false;
+
+          if (!force_refresh) {
+            sse.sendProgress(`🔍 Checking cache...`);
+            const cachedData = await env.QUESTIONS_KV.get(cacheKey, "json");
+            if (cachedData && Array.isArray(cachedData)) {
+              questions = cachedData as DetailedQuestion[];
+              cached = true;
+              sse.sendProgress(`✅ Found ${questions.length} cached questions.`);
+            }
           }
-        }
 
-        if (questions.length === 0) {
-          await log(`🧠 Cache miss. Analyzing repository structure and docs...`);
-          await log(`   (This may take 10-20 seconds...)`);
+          if (questions.length === 0) {
+            sse.sendProgress(`🧠 Cache miss. Analyzing repository structure and docs...`);
+            sse.sendProgress(`   (This may take 10-20 seconds...)`);
+            
+            // Pass use_gemini flag to repo analyzer
+            const generatedQuestions = await analyzeRepoAndGenerateQuestions(
+              env, // Pass full env
+              owner,
+              repo,
+              env.GITHUB_TOKEN,
+              max_files,
+              use_gemini // Pass the flag
+            );
+
+            const fundamentalQuestion: DetailedQuestion = {
+              query: `Can the ${repo} repository be retrofitted to run on Cloudflare Workers?`,
+              cloudflare_bindings_involved: ["env", "kv", "r2", "durable-objects"],
+              node_libs_involved: [],
+              tags: ["feasibility", "migration"],
+              relevant_code_files: [],
+            };
+
+            questions = [fundamentalQuestion, ...generatedQuestions];
+            sse.sendProgress(`✨ Generated ${questions.length} migration questions.`);
+            await env.QUESTIONS_KV.put(cacheKey, JSON.stringify(questions), { expirationTtl: 86400 * 7 });
+          }
+
+          sse.sendProgress(`\n⚡ Processing ${questions.length} questions against Cloudflare Docs...`);
+
+          for (const [index, question] of questions.entries()) {
+            sse.sendProgress(`   [${index + 1}/${questions.length}] Asking: "${question.query}"...`);
+            try {
+              const rewritten = await provider.rewrite(question.query, {
+                bindings: question.cloudflare_bindings_involved,
+                libraries: question.node_libs_involved,
+                tags: question.tags
+              });
+
+              const mcpRes = await queryMCP(rewritten, undefined, env.MCP_API_URL);
+              const { analysis } = await provider.analyze(question.query, mcpRes);
+
+              // Record in DB
+              await addQuestion(
+                env.DB,
+                sessionDbId,
+                question.query,
+                mcpRes,
+                'ai_generated',
+                {
+                  rewritten_question: rewritten,
+                  analysis,
+                  tags: question.tags
+                }
+              );
+
+              const result = {
+                original_question: question,
+                rewritten_question: rewritten,
+                mcp_response: mcpRes,
+                ai_analysis: analysis
+              };
+
+              sse.sendData(result, `      -> ✅ Analysis complete.`);
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : "Unknown";
+              sse.sendProgress(`      -> ❌ Error: ${errorMsg}`);
+              sse.sendError(err as Error);
+            }
+          }
           
-          // Pass use_gemini flag to repo analyzer
-          const generatedQuestions = await analyzeRepoAndGenerateQuestions(
-            env, // Pass full env
-            owner,
-            repo,
-            env.GITHUB_TOKEN,
-            max_files,
-            use_gemini // Pass the flag
-          );
-
-          const fundamentalQuestion: DetailedQuestion = {
-            query: `Can the ${repo} repository be retrofitted to run on Cloudflare Workers?`,
-            cloudflare_bindings_involved: ["env", "kv", "r2", "durable-objects"],
-            node_libs_involved: [],
-            tags: ["feasibility", "migration"],
-            relevant_code_files: [],
-          };
-
-          questions = [fundamentalQuestion, ...generatedQuestions];
-          await log(`✨ Generated ${questions.length} migration questions.`);
-          await env.QUESTIONS_KV.put(cacheKey, JSON.stringify(questions), { expirationTtl: 86400 * 7 });
+          sse.complete({
+            repo_url,
+            repo_owner: owner,
+            repo_name: repo,
+            cached,
+            questions_generated: questions.length,
+            questions,
+            // results are sent incrementally via data events
+            total_processed: questions.length,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.error("Error in auto-analyze stream:", err);
+          sse.sendError(err as Error);
+          sse.complete();
         }
+      })();
 
-        await log(`\n⚡ Processing ${questions.length} questions against Cloudflare Docs...`);
-
-        for (const [index, question] of questions.entries()) {
-          await log(`   [${index + 1}/${questions.length}] Asking: "${question.query}"...`);
-          try {
-            const rewritten = await provider.rewrite(question.query, {
-              bindings: question.cloudflare_bindings_involved,
-              libraries: question.node_libs_involved,
-              tags: question.tags
-            });
-
-            const mcpRes = await queryMCP(rewritten, undefined, env.MCP_API_URL);
-            const { analysis } = await provider.analyze(question.query, mcpRes);
-
-            await log(`      -> ✅ Analysis complete.`);
-          } catch (err) {
-            await log(`      -> ❌ Error: ${err instanceof Error ? err.message : "Unknown"}`);
-          }
-        }
-        await log(`\n🎉 Analysis Complete!`);
-      }) as any; // Cast to any to avoid type mismatch with zod-openapi
+      return new Response(sse.stream, {
+        headers: getSSEHeaders(),
+      });
     }
 
     // --- Standard JSON Logic (Non-Streaming) ---
@@ -521,6 +833,21 @@ app.openapi(autoAnalyzeRoute, async (c) => {
           const { analysis, followUpQuestions } = await provider.analyze(
             question.query,
             mcpResponse
+          );
+
+          // Record in DB
+          await addQuestion(
+            env.DB,
+            sessionDbId,
+            question.query,
+            mcpResponse,
+            'ai_generated',
+            {
+              rewritten_question: rewrittenQuestion,
+              analysis,
+              follow_up_questions: followUpQuestions,
+              code_snippets: codeSnippets
+            }
           );
 
           // Process follow-up questions
@@ -742,7 +1069,12 @@ async function handlePRAnalyzeStream(
                 }
               );
 
-              sse.sendProgress(`    ✓ Answer received and stored`);
+              // Send structured data event
+              sse.sendData({
+                question: question,
+                rewritten_question: rewrittenQuestion,
+                mcp_response: mcpResponse,
+              }, `    ✓ Answer received and stored`);
 
               answers.push({
                 original_question: question,
