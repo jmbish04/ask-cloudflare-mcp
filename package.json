@@ -1,0 +1,26 @@
+{
+  "name": "ask-cloudflare-mcp",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker that acts as both an API and MCP server with GitHub integration",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "types": "wrangler types"
+  },
+  "keywords": ["cloudflare", "worker", "mcp", "github", "api"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.6.14",
+    "zod": "^3.23.8",
+    "@hono/zod-openapi": "^0.16.4",
+    "@octokit/rest": "^21.0.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "wrangler": "^3.94.0",
+    "typescript": "^5.7.2"
+  }
+}

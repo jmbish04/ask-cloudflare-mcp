@@ -1,0 +1,20 @@
+name = "ask-cloudflare-mcp"
+main = "src/index.ts"
+compatibility_date = "2024-11-30"
+compatibility_flags = ["nodejs_compat"]
+
+# AI Binding for Worker AI
+[ai]
+binding = "AI"
+
+# KV namespace for caching (optional)
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "your-kv-namespace-id"
+
+# Secrets (set these using: wrangler secret put GITHUB_TOKEN)
+# GITHUB_TOKEN - GitHub Personal Access Token (readonly)
+
+# Environment variables
+[vars]
+MCP_API_URL = "https://docs.mcp.cloudflare.com/mcp"
