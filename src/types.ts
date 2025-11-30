@@ -5,6 +5,7 @@ export interface Env {
   AI: Ai;
   GITHUB_TOKEN: string;
   MCP_API_URL: string;
+  ASSETS: Fetcher;
 }
 
 // Question schema for simple pathway

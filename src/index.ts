@@ -12,30 +12,36 @@ app.use("/*", cors());
 // API routes
 app.route("/api", apiRoutes);
 
-// Root endpoint
-app.get("/", (c) => {
-  return c.json({
-    name: "Ask Cloudflare MCP Worker",
-    version: "1.0.0",
-    description: "Cloudflare Worker that acts as both an API and MCP server with GitHub integration",
-    endpoints: {
-      api: {
-        health: "/api/health",
-        simpleQuestions: "/api/questions/simple",
-        detailedQuestions: "/api/questions/detailed",
+// Root endpoint - serve static landing page
+app.get("/", async (c) => {
+  try {
+    const asset = await c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url)));
+    return asset;
+  } catch {
+    // Fallback if static assets not available
+    return c.json({
+      name: "Ask Cloudflare MCP Worker",
+      version: "1.0.0",
+      description: "Cloudflare Worker that acts as both an API and MCP server with GitHub integration",
+      endpoints: {
+        api: {
+          health: "/api/health",
+          simpleQuestions: "/api/questions/simple",
+          detailedQuestions: "/api/questions/detailed",
+        },
+        documentation: {
+          openapi: "/openapi.json",
+          swagger: "/swagger",
+        },
+        websocket: "/ws",
       },
-      documentation: {
-        openapi: "/openapi.json",
-        swagger: "/swagger",
+      mcp: {
+        protocol: "JSON-RPC 2.0",
+        websocket: "/ws",
+        methods: ["initialize", "tools/list", "tools/call"],
       },
-      websocket: "/ws",
-    },
-    mcp: {
-      protocol: "JSON-RPC 2.0",
-      websocket: "/ws",
-      methods: ["initialize", "tools/list", "tools/call"],
-    },
-  });
+    });
+  }
 });
 
 // OpenAPI spec endpoint
@@ -68,36 +74,42 @@ app.doc("/openapi.json", {
   ],
 });
 
-// Swagger UI (optional - can be added with additional package)
-app.get("/swagger", (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Ask Cloudflare MCP API - Swagger UI</title>
-        <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
-      </head>
-      <body>
-        <div id="swagger-ui"></div>
-        <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-        <script>
-          window.onload = function() {
-            SwaggerUIBundle({
-              url: '/openapi.json',
-              dom_id: '#swagger-ui',
-              presets: [
-                SwaggerUIBundle.presets.apis,
-                SwaggerUIBundle.SwaggerUIStandalonePreset
-              ],
-              layout: "BaseLayout"
-            });
-          };
-        </script>
-      </body>
-    </html>
-  `);
+// Swagger UI - serve static file
+app.get("/swagger", async (c) => {
+  try {
+    const asset = await c.env.ASSETS.fetch(new Request(new URL("/swagger.html", c.req.url)));
+    return asset;
+  } catch {
+    // Fallback inline Swagger UI if static file not available
+    return c.html(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Ask Cloudflare MCP API - Swagger UI</title>
+          <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+        </head>
+        <body>
+          <div id="swagger-ui"></div>
+          <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+          <script>
+            window.onload = function() {
+              SwaggerUIBundle({
+                url: '/openapi.json',
+                dom_id: '#swagger-ui',
+                presets: [
+                  SwaggerUIBundle.presets.apis,
+                  SwaggerUIBundle.SwaggerUIStandalonePreset
+                ],
+                layout: "BaseLayout"
+              });
+            };
+          </script>
+        </body>
+      </html>
+    `);
+  }
 });
 
 // WebSocket endpoint

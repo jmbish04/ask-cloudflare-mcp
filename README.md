@@ -10,6 +10,7 @@ A Cloudflare Worker that acts as both an API and MCP (Model Context Protocol) se
 - 🔗 **GitHub Integration**: Fetches code context from GitHub repositories
 - 🌐 **WebSocket Support**: Real-time communication for streaming responses
 - 📖 **OpenAPI 3.1.0**: Fully documented API with Swagger UI
+- 🎨 **Beautiful Landing Page**: Interactive documentation served as static assets
 - 🔒 **Secure**: Uses GitHub Personal Access Token for readonly repository access
 
 ## Architecture
@@ -96,6 +97,20 @@ This starts the worker at `http://localhost:8787`
 ```bash
 npm run deploy
 ```
+
+### Access the Landing Page
+
+Once deployed (or running locally), visit the root URL to see the interactive documentation landing page:
+
+- **Local**: `http://localhost:8787`
+- **Production**: `https://your-worker.workers.dev`
+
+The landing page provides:
+- Quick links to API documentation and Swagger UI
+- Interactive examples with copy-paste functionality
+- Complete API endpoint reference
+- WebSocket/MCP usage guide
+- Setup instructions
 
 ## API Endpoints
 
@@ -334,6 +349,9 @@ ask-cloudflare-mcp/
 │       ├── mcp-client.ts     # MCP client utilities
 │       ├── worker-ai.ts      # Worker AI integration
 │       └── github.ts         # GitHub API utilities
+├── public/                   # Static assets (served via ASSETS binding)
+│   ├── index.html            # Interactive landing page
+│   └── swagger.html          # Swagger UI page
 ├── examples/
 │   ├── simple-questions.json
 │   └── detailed-questions.json
@@ -350,6 +368,7 @@ ask-cloudflare-mcp/
 | `GITHUB_TOKEN` | GitHub Personal Access Token (readonly) | Yes |
 | `MCP_API_URL` | Cloudflare Docs MCP API URL | Yes (default set) |
 | `AI` | Worker AI binding | Yes (auto-configured) |
+| `ASSETS` | Static assets binding for landing page | Yes (auto-configured) |
 
 ## Development
 
