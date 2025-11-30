@@ -261,6 +261,12 @@
                     <p>View and manage your API sessions</p>
                 </a>
 
+                <a href="/stream-demo.html" class="link-card">
+                    <div class="icon">⚡</div>
+                    <h3>Streaming Demo</h3>
+                    <p>Real-time terminal-style progress updates</p>
+                </a>
+
                 <a href="/swagger" class="link-card">
                     <div class="icon">📖</div>
                     <h3>Interactive API Docs</h3>
@@ -303,12 +309,22 @@
                     <div class="feature">
                         <div class="icon">🔗</div>
                         <h4>GitHub</h4>
-                        <p>Fetch code context from repositories</p>
+                        <p>Fetch code context from repositories and analyze PRs</p>
                     </div>
                     <div class="feature">
                         <div class="icon">⚡</div>
-                        <h4>Real-time</h4>
-                        <p>WebSocket support for streaming responses</p>
+                        <h4>HTTP Streaming</h4>
+                        <p>Server-Sent Events with real-time progress updates</p>
+                    </div>
+                    <div class="feature">
+                        <div class="icon">🔌</div>
+                        <h4>WebSocket/MCP</h4>
+                        <p>Full MCP server support with tools</p>
+                    </div>
+                    <div class="feature">
+                        <div class="icon">💾</div>
+                        <h4>Session Tracking</h4>
+                        <p>D1 database with Drizzle ORM for full history</p>
                     </div>
                 </div>
             </div>
@@ -341,6 +357,7 @@
                         <span class="method post">POST</span>
                         <span class="path">/api/questions/pr-analyze</span>
                         <span class="description">🆕 Analyze GitHub PR comments for Cloudflare-specific solutions, generate questions, and get answers</span>
+                        <span class="description" style="display:block; margin-top:5px; color:#ffa500;">⚡ Add <code style="background:#333;padding:2px 6px;border-radius:3px;">?stream=true</code> for real-time progress updates via Server-Sent Events</span>
                     </li>
                     <li>
                         <span class="method get">GET</span>

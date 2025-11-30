@@ -21,6 +21,7 @@ import {
 } from "../utils/repo-analyzer";
 import { createSession, addQuestion, getAllSessions, getSession, getSessionQuestions } from "../utils/session-manager";
 import { logAction, logError, getSessionActionLogs } from "../utils/action-logger";
+import { createSSEStream, getSSEHeaders, ProgressTracker } from "../utils/streaming";
 
 const app = new OpenAPIHono<{ Bindings: Env }>();
 
@@ -569,10 +570,226 @@ const prAnalyzeRoute = createRoute({
   },
 });
 
+/**
+ * Streaming handler for PR analysis
+ */
+async function handlePRAnalyzeStream(
+  c: any,
+  env: Env,
+  pr_url: string,
+  comment_filter: string | undefined,
+  owner: string,
+  repo: string,
+  prNumber: number
+) {
+  const sse = createSSEStream();
+
+  // Start streaming response
+  c.header('Content-Type', 'text/event-stream');
+  c.header('Cache-Control', 'no-cache');
+  c.header('Connection', 'keep-alive');
+
+  // Process in background and send updates
+  (async () => {
+    try {
+      sse.sendProgress(`🚀 Starting PR analysis for ${owner}/${repo} #${prNumber}...`);
+
+      // Create session for tracking
+      sse.sendProgress(`📝 Creating analysis session...`);
+      const { sessionId, sessionDbId } = await createSession(env, 'pr-analyze', {
+        repoUrl: pr_url,
+        titleContext: `PR #${prNumber} - ${owner}/${repo}`,
+      });
+
+      await logAction(env.DB, "pr_analysis_started", `Analyzing PR #${prNumber}`, {
+        sessionId: sessionDbId,
+        metadata: { owner, repo, prNumber, comment_filter },
+      });
+
+      // Get all PR comments
+      sse.sendProgress(`💬 Fetching comments from PR #${prNumber}...`);
+      const allComments = await getPRComments(owner, repo, prNumber, env.GITHUB_TOKEN);
+
+      // Filter comments if requested
+      const comments = filterCommentsByAuthor(allComments, comment_filter);
+      sse.sendProgress(`✓ Found ${comments.length} comments ${comment_filter ? `from ${comment_filter}` : ''}`);
+
+      await logAction(env.DB, "comments_extracted", `Extracted ${comments.length} comments`, {
+        sessionId: sessionDbId,
+        metadata: { total_comments: allComments.length, filtered_comments: comments.length },
+      });
+
+      const tracker = new ProgressTracker(comments.length, (msg) => sse.sendProgress(msg));
+      const results = [];
+
+      // Process each comment
+      for (let i = 0; i < comments.length; i++) {
+        const comment = comments[i];
+        tracker.increment(`Analyzing comment from @${comment.author}...`);
+
+        try {
+          // Analyze if comment is Cloudflare-related
+          sse.sendProgress(`  🔍 Checking if comment is Cloudflare-related...`);
+          const analysis = await analyzeCommentForCloudflare(env.AI, comment.body, {
+            filePath: comment.file_path,
+            line: comment.line,
+          });
+
+          if (!analysis.isCloudflareRelated) {
+            sse.sendProgress(`  ⊘ Not Cloudflare-related, skipping...`);
+            results.push({
+              comment: {
+                id: comment.id,
+                author: comment.author,
+                body: comment.body,
+                file_path: comment.file_path,
+                line: comment.line,
+              },
+              is_cloudflare_related: false,
+            });
+            continue;
+          }
+
+          sse.sendProgress(`  ✓ Cloudflare-related! Context: ${analysis.cloudflareContext}`);
+          sse.sendProgress(`  💡 Generating ${analysis.questions.length} questions...`);
+
+          // Generate questions and get answers
+          const answers = [];
+          for (let j = 0; j < analysis.questions.length; j++) {
+            const question = analysis.questions[j];
+            try {
+              sse.sendProgress(`    [${j + 1}/${analysis.questions.length}] Processing: "${question.substring(0, 60)}${question.length > 60 ? '...' : ''}"`);
+
+              // Rewrite question for MCP
+              const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, question);
+
+              // Query MCP
+              sse.sendProgress(`    📚 Querying Cloudflare docs...`);
+              const context = `PR Comment Analysis - ${owner}/${repo} PR #${prNumber}`;
+              const mcpResponse = await queryMCP(rewrittenQuestion, context, env.MCP_API_URL);
+
+              // Store question in database
+              await addQuestion(
+                env.DB,
+                sessionDbId,
+                question,
+                mcpResponse,
+                'ai_generated',
+                {
+                  pr_number: prNumber,
+                  comment_id: comment.id,
+                  comment_author: comment.author,
+                  cloudflare_context: analysis.cloudflareContext,
+                }
+              );
+
+              sse.sendProgress(`    ✓ Answer received and stored`);
+
+              answers.push({
+                original_question: question,
+                rewritten_question: rewrittenQuestion,
+                mcp_response: mcpResponse,
+              });
+            } catch (error) {
+              console.error(`Error processing question "${question}":`, error);
+              sse.sendProgress(`    ⚠️ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              await logError(env.DB, "question_processing_error", error as Error, {
+                sessionId: sessionDbId,
+                metadata: { question },
+              });
+              answers.push({
+                original_question: question,
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+            }
+          }
+
+          await logAction(env.DB, "comment_analyzed", `Analyzed Cloudflare-related comment`, {
+            sessionId: sessionDbId,
+            metadata: {
+              comment_id: comment.id,
+              questions_generated: analysis.questions.length,
+            },
+          });
+
+          results.push({
+            comment: {
+              id: comment.id,
+              author: comment.author,
+              body: comment.body,
+              file_path: comment.file_path,
+              line: comment.line,
+            },
+            is_cloudflare_related: true,
+            cloudflare_context: analysis.cloudflareContext,
+            questions_generated: analysis.questions,
+            answers,
+          });
+        } catch (error) {
+          console.error(`Error processing comment ${comment.id}:`, error);
+          sse.sendProgress(`  ⚠️ Error processing comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          await logError(env.DB, "comment_analysis_error", error as Error, {
+            sessionId: sessionDbId,
+            metadata: { comment_id: comment.id },
+          });
+          results.push({
+            comment: {
+              id: comment.id,
+              author: comment.author,
+              body: comment.body,
+              file_path: comment.file_path,
+              line: comment.line,
+            },
+            is_cloudflare_related: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+
+      const cloudflareRelatedCount = results.filter(r => r.is_cloudflare_related).length;
+
+      await logAction(env.DB, "pr_analysis_completed", `Completed PR analysis`, {
+        sessionId: sessionDbId,
+        metadata: {
+          total_comments: comments.length,
+          cloudflare_related: cloudflareRelatedCount,
+        },
+      });
+
+      tracker.complete(`Analysis complete! Found ${cloudflareRelatedCount} Cloudflare-related comments`);
+
+      // Send final data
+      sse.complete({
+        session_id: sessionId,
+        pr_url,
+        repo_owner: owner,
+        repo_name: repo,
+        pr_number: prNumber,
+        comments_extracted: comments.length,
+        cloudflare_related_comments: cloudflareRelatedCount,
+        results,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error in streaming PR analyze:", error);
+      sse.sendError(error as Error);
+      sse.complete();
+    }
+  })();
+
+  return new Response(sse.stream, {
+    headers: getSSEHeaders(),
+  });
+}
+
 app.openapi(prAnalyzeRoute, async (c) => {
   try {
     const { pr_url, comment_filter } = c.req.valid("json");
     const env = c.env;
+
+    // Check if client wants streaming
+    const wantsStream = c.req.query('stream') === 'true' ||
+                       c.req.header('accept')?.includes('text/event-stream');
 
     // Parse PR URL
     const parsed = parsePRUrl(pr_url);
@@ -581,6 +798,11 @@ app.openapi(prAnalyzeRoute, async (c) => {
     }
 
     const { owner, repo, prNumber } = parsed;
+
+    // If streaming requested, use streaming handler
+    if (wantsStream) {
+      return handlePRAnalyzeStream(c, env, pr_url, comment_filter, owner, repo, prNumber);
+    }
 
     // Create session for tracking
     const { sessionId, sessionDbId } = await createSession(env, 'pr-analyze', {
