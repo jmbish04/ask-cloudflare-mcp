@@ -116,6 +116,8 @@ export function filterRelevantFiles(
     ".toml",
     ".config.js",
     ".config.ts",
+    "Dockerfile",
+    "Procfile"
   ];
 
   const filtered = files.filter((file) => {
@@ -154,8 +156,8 @@ export function filterRelevantFiles(
 }
 
 /**
- * Analyze repository and generate questions using Worker AI
- * Updated to use queryWorkerAIStructured with GPT-OSS-120B -> Llama-3.3-70B pipeline
+ * Analyze repository and generate questions using Worker AI (Smart Stack Detection)
+ * Uses GPT-OSS-120B for reasoning and Llama-3.3-70B for structuring.
  */
 export async function analyzeRepoAndGenerateQuestions(
   ai: Ai,
@@ -164,18 +166,18 @@ export async function analyzeRepoAndGenerateQuestions(
   token: string,
   maxFiles: number = 50
 ): Promise<DetailedQuestion[]> {
-  // Get file tree
+  // 1. Fetch File Tree & Filter
   const allFiles = await getRepoFileTree(owner, repo, token);
   const relevantFiles = filterRelevantFiles(allFiles, maxFiles);
 
-  // Read file contents
+  // 2. Read File Contents (Focus on infrastructure files with larger chunk size)
   const fileContents = await Promise.all(
-    relevantFiles.slice(0, 10).map(async (file) => {
+    relevantFiles.slice(0, 15).map(async (file) => {
       try {
         const content = await fetchGitHubFile(owner, repo, file.path, token);
         return {
           path: file.path,
-          content: content.substring(0, 5000), // Limit content size
+          content: content.substring(0, 8000), // Larger chunk for better context
         };
       } catch {
         return null;
@@ -185,30 +187,36 @@ export async function analyzeRepoAndGenerateQuestions(
 
   const validFiles = fileContents.filter((f) => f !== null);
 
-  const analysisPrompt = `You are a technical analyst helping migrate a codebase to Cloudflare Workers/Pages.
+  // 3. Construct "Stack Aware" Prompt for GPT-OSS-120B
+  const analysisPrompt = `You are a Senior Cloud Architect specializing in migrating legacy applications to Cloudflare's Edge (Workers, Pages, D1, R2, Queues).
 
-Repository: ${owner}/${repo}
-Files analyzed: ${validFiles.length}
+  Analyze the provided codebase to identify the exact technology stack.
+  
+  REPO: ${owner}/${repo}
+  
+  FILES PROVIDED:
+  ${validFiles.map((f) => `\n=== ${f!.path} ===\n${f!.content.substring(0, 1500)}...`).join("\n")}
 
-File Structure:
-${validFiles.map((f) => `- ${f!.path}`).join("\n")}
+  YOUR TASK:
+  1. Identify the Core Stack:
+     - Frontend (React, Vue, Next.js, Plain HTML?)
+     - Backend (Node.js, Express, Python/Django, Go?)
+     - Database (Postgres, MySQL, MongoDB, Redis?)
+     - State/Caching (Redux, Redis, Memcached?)
+  
+  2. Generate specific, intelligent migration questions mapping THIS stack to Cloudflare equivalents.
+     - DO NOT ask "Can X be retrofitted?".
+     - DO ask "How do I migrate [Specific Tech] to [Specific Cloudflare Product]?".
+     - If Postgres is found -> Ask about migrating to Cloudflare D1 or Hyperdrive.
+     - If Redis is found -> Ask about Cloudflare KV or Durable Objects.
+     - If Express is found -> Ask about porting Express to Workers or Hono.
+     - If React is found -> Ask about deploying SPA to Cloudflare Pages.
+     - If a Database ORM (Prisma, Drizzle, Mongoose) is found -> Ask about compatibility with Workers.
 
-Sample File Contents:
-${validFiles
-  .slice(0, 3)
-  .map((f) => `\n=== ${f!.path} ===\n${f!.content.substring(0, 1000)}...`)
-  .join("\n")}
+  3. Return a list of 3-5 highly relevant, deeply technical questions.
+  `;
 
-Please analyze this codebase and generate 5-10 specific questions about migrating to Cloudflare Workers/Pages.
-
-For each question, provide:
-1. The main question
-2. Cloudflare bindings that might be relevant (env, kv, r2, durable-objects, ai, etc.)
-3. Node libraries that are being used
-4. Tags for categorization
-5. Relevant code files with line ranges (estimate based on file size)`;
-
-  // Define strict JSON schema for the output
+  // 4. Schema for Llama-3.3 to enforce
   const schema = {
     type: "object",
     properties: {
@@ -217,14 +225,19 @@ For each question, provide:
         items: {
           type: "object",
           properties: {
-            query: { type: "string" },
+            query: { 
+              type: "string",
+              description: "The specific technical question for Cloudflare docs"
+            },
             cloudflare_bindings_involved: { 
               type: "array", 
-              items: { type: "string" } 
+              items: { type: "string" },
+              description: "Predicted bindings (e.g., 'd1', 'hyperdrive', 'kv', 'pages', 'workers')"
             },
             node_libs_involved: { 
               type: "array", 
-              items: { type: "string" } 
+              items: { type: "string" },
+              description: "Libraries from the original repo that are relevant (e.g., 'express', 'mongoose')"
             },
             tags: { 
               type: "array", 
@@ -255,13 +268,12 @@ For each question, provide:
   };
 
   try {
-    // Use the structured AI pipeline
+    // Uses the new 2-step Reasoning (GPT-OSS) -> Structuring (Llama-3.3) flow
     const result = await queryWorkerAIStructured(ai, analysisPrompt, schema);
     return result.questions;
   } catch (error) {
-    console.error("Error generating questions:", error);
-
-    // Fallback: generate basic questions based on file analysis
+    console.error("Error generating smart questions:", error);
+    // Fallback if AI fails
     return generateFallbackQuestions(validFiles as any, owner, repo);
   }
 }
@@ -386,7 +398,7 @@ export function deduplicateQuestions(
 
 /**
  * Evaluate if existing questions are sufficient
- * Updated to use queryWorkerAIStructured
+ * Uses structured AI pipeline for decision making.
  */
 export async function evaluateQuestionSufficiency(
   ai: Ai,
@@ -402,8 +414,8 @@ Newly Generated Questions (${newQuestions.length}):
 ${newQuestions.map((q, i) => `${i + 1}. ${q.query}`).join("\n")}
 
 Evaluate:
-1. Are the existing questions comprehensive enough?
-2. Do the new questions add significant value?
+1. Are the existing questions comprehensive enough for a migration?
+2. Do the new questions add significant value or cover new ground (e.g., database, auth)?
 3. Which questions should be included in the final set?`;
 
   const schema = {
