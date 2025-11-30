@@ -1,4 +1,4 @@
-import { Card, CardBody, Code, Divider } from "@heroui/react";
+import { Card, Code, Divider } from "@heroui/react";
 
 export const MCPGuide = () => {
   // Use the injected environment variable or fallback to window location
@@ -13,7 +13,7 @@ export const MCPGuide = () => {
       </div>
 
       <Card>
-        <CardBody className="space-y-4 p-6">
+        <Card.Body className="space-y-4 p-6">
           <h3 className="text-xl font-bold">Model Context Protocol (MCP)</h3>
           <p>
             This worker implements the Model Context Protocol, allowing AI agents (like Claude Desktop or Cursor) 
@@ -32,11 +32,11 @@ export const MCPGuide = () => {
   }
 }`}
           </pre>
-        </CardBody>
+        </Card.Body>
       </Card>
 
       <Card>
-        <CardBody className="space-y-4 p-6">
+        <Card.Body className="space-y-4 p-6">
           <h3 className="text-xl font-bold">WebSocket API</h3>
           <p>
             The <Code>/ws</Code> endpoint provides a real-time WebSocket connection for streaming updates.
@@ -60,7 +60,7 @@ export const MCPGuide = () => {
   "data": "Processing started..."
 }`}
           </pre>
-        </CardBody>
+        </Card.Body>
       </Card>
     </div>
   );

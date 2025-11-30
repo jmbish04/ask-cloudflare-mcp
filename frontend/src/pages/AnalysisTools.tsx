@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Card, 
-  CardHeader, 
-  CardBody, 
-  CardFooter,
   Input, 
   Button, 
   Select,
@@ -57,17 +54,17 @@ const StreamViewer = ({ events }: { events: AnalysisEvent[] }) => {
               {/* Errors */}
               {event.type === 'error' && (
                 <Card className="bg-danger-50 border-danger-200 border">
-                  <CardBody className="text-danger">
+                  <Card.Body className="text-danger">
                     <p className="font-bold">Error</p>
                     <p>{event.message}</p>
-                  </CardBody>
+                  </Card.Body>
                 </Card>
               )}
 
               {/* Structured Data Results */}
               {event.type === 'data' && event.data && (
                 <Card className="bg-content2 dark:bg-content1 border-default-200 border">
-                  <CardBody className="space-y-4">
+                  <Card.Body className="space-y-4">
                      {/* Header if available */}
                      {event.message && (
                       <div className="flex items-center gap-2 text-success font-bold">
@@ -114,17 +111,17 @@ const StreamViewer = ({ events }: { events: AnalysisEvent[] }) => {
                          </div>
                        </div>
                      )}
-                  </CardBody>
+                  </Card.Body>
                 </Card>
               )}
 
               {/* Completion */}
               {event.type === 'complete' && (
                 <Card className="bg-success-50 border-success-200 border">
-                  <CardBody className="text-success font-bold text-center">
+                  <Card.Body className="text-success font-bold text-center">
                     {event.data?.sessionId && <div className="text-sm mb-2">Session ID: {event.data.sessionId}</div>}
                     Analysis Complete!
-                  </CardBody>
+                  </Card.Body>
                 </Card>
               )}
             </motion.div>
@@ -229,12 +226,12 @@ export const AnalysisTools = () => {
       {/* Sidebar / Configuration */}
       <div className="lg:col-span-4 space-y-6">
         <Card className="h-full">
-          <CardHeader className="flex flex-col items-start gap-2">
+          <Card.Header className="flex flex-col items-start gap-2">
             <h2 className="text-2xl font-bold">Analysis Tools</h2>
             <p className="text-small text-default-500">Select a tool to begin analysis</p>
-          </CardHeader>
+          </Card.Header>
           <Divider/>
-          <CardBody className="space-y-6 overflow-visible">
+          <Card.Body className="space-y-6 overflow-visible">
             <Select 
               label="Select Tool" 
               selectedKeys={[selectedTool]} 
@@ -310,8 +307,8 @@ export const AnalysisTools = () => {
                 </p>
               </div>
             )}
-          </CardBody>
-          <CardFooter>
+          </Card.Body>
+          <Card.Footer>
             {loading ? (
               <Button color="danger" variant="flat" onPress={handleStop} className="w-full">
                 Stop Analysis
@@ -321,21 +318,21 @@ export const AnalysisTools = () => {
                 Start Analysis
               </Button>
             )}
-          </CardFooter>
+          </Card.Footer>
         </Card>
       </div>
 
       {/* Main Output Area */}
       <div className="lg:col-span-8 h-full flex flex-col">
         <Card className="flex-grow bg-background border-default-200 border">
-          <CardHeader className="flex justify-between items-center border-b border-default-200">
+          <Card.Header className="flex justify-between items-center border-b border-default-200">
             <div className="flex items-center gap-2">
               <span className="text-xl">⚡</span>
               <h3 className="font-bold">Live Output</h3>
             </div>
             {loading && <Spinner size="sm" color="primary" />}
-          </CardHeader>
-          <CardBody className="p-0 bg-black/5 dark:bg-black/20">
+          </Card.Header>
+          <Card.Body className="p-0 bg-black/5 dark:bg-black/20">
             {events.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-default-400 space-y-4">
                 <div className="text-6xl opacity-20">📊</div>
@@ -344,7 +341,7 @@ export const AnalysisTools = () => {
             ) : (
               <StreamViewer events={events} />
             )}
-          </CardBody>
+          </Card.Body>
         </Card>
       </div>
     </div>

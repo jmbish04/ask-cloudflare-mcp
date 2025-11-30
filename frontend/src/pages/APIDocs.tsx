@@ -1,6 +1,6 @@
 import SwaggerUI from "swagger-ui-react";
 import "swagger-ui-react/swagger-ui.css";
-import { Card, CardBody } from "@heroui/react";
+import { Card } from "@heroui/react";
 
 export const APIDocs = () => {
   // Use the injected environment variable or fallback to window location
@@ -11,9 +11,9 @@ export const APIDocs = () => {
       <h2 className="text-2xl font-bold">API Documentation</h2>
       <Card className="bg-white dark:bg-white"> 
         {/* Force white background because SwaggerUI themes are light by default */}
-        <CardBody>
+        <Card.Body>
           <SwaggerUI url={`${workerUrl}/openapi.json`} />
-        </CardBody>
+        </Card.Body>
       </Card>
     </div>
   );

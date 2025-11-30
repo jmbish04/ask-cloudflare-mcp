@@ -16,7 +16,6 @@ import {
   useDisclosure,
   Spinner,
   Card,
-  CardBody,
   Divider
 } from "@heroui/react";
 
@@ -87,7 +86,7 @@ export const Sessions = () => {
       </div>
 
       <Card>
-        <CardBody>
+        <Card.Body>
           <Table aria-label="Sessions table">
             <TableHeader>
               <TableColumn>TITLE</TableColumn>
@@ -117,7 +116,7 @@ export const Sessions = () => {
               )}
             </TableBody>
           </Table>
-        </CardBody>
+        </Card.Body>
       </Card>
 
       <Modal 
@@ -144,7 +143,7 @@ export const Sessions = () => {
                   <div className="space-y-4">
                     {sessionDetails.questions.map((q: any, i: number) => (
                       <Card key={i} className="bg-default-50">
-                        <CardBody className="space-y-3">
+                        <Card.Body className="space-y-3">
                           <div>
                             <Chip size="sm" color="primary" variant="dot">Question</Chip>
                             <p className="mt-2 font-medium">{q.question}</p>
@@ -156,7 +155,7 @@ export const Sessions = () => {
                               {JSON.stringify(JSON.parse(q.response), null, 2)}
                             </pre>
                           </div>
-                        </CardBody>
+                        </Card.Body>
                       </Card>
                     ))}
                   </div>

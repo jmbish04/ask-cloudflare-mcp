@@ -1,7 +1,5 @@
 import { 
   Card, 
-  CardHeader, 
-  CardBody, 
   Divider,
   Snippet
 } from "@heroui/react";
@@ -18,9 +16,9 @@ export const Examples = () => {
       </div>
 
       <Card>
-        <CardHeader className="font-bold">Simple Question</CardHeader>
+        <Card.Header className="font-bold">Simple Question</Card.Header>
         <Divider/>
-        <CardBody>
+        <Card.Body>
           <p className="mb-4">Ask a straightforward technical question about Cloudflare Workers.</p>
           <Snippet symbol="$" className="w-full">
 {`curl -X POST ${workerUrl}/api/questions/simple \\
@@ -30,13 +28,13 @@ export const Examples = () => {
     "use_gemini": true
   }'`}
           </Snippet>
-        </CardBody>
+        </Card.Body>
       </Card>
 
       <Card>
-        <CardHeader className="font-bold">Repository Auto-Analyze</CardHeader>
+        <Card.Header className="font-bold">Repository Auto-Analyze</Card.Header>
         <Divider/>
-        <CardBody>
+        <Card.Body>
           <p className="mb-4">Analyze a GitHub repository for migration compatibility.</p>
           <Snippet symbol="$" className="w-full">
 {`curl -X POST ${workerUrl}/api/questions/auto-analyze?stream=true \\
@@ -46,13 +44,13 @@ export const Examples = () => {
     "use_gemini": true
   }'`}
           </Snippet>
-        </CardBody>
+        </Card.Body>
       </Card>
 
       <Card>
-        <CardHeader className="font-bold">PR Analysis</CardHeader>
+        <Card.Header className="font-bold">PR Analysis</Card.Header>
         <Divider/>
-        <CardBody>
+        <Card.Body>
           <p className="mb-4">Analyze comments in a Pull Request for Cloudflare context.</p>
           <Snippet symbol="$" className="w-full">
 {`curl -X POST ${workerUrl}/api/questions/pr-analyze?stream=true \\
@@ -62,7 +60,7 @@ export const Examples = () => {
     "comment_filter": "copilot"
   }'`}
           </Snippet>
-        </CardBody>
+        </Card.Body>
       </Card>
     </div>
   );

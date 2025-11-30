@@ -1,9 +1,17 @@
 @import "tailwindcss";
-@plugin '../hero.ts';
+@import "@heroui/styles";
 
-@source '../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
+/* Optional: Custom theme overrides */
+:root {
+  /* Customize design tokens */
+}
 
-@custom-variant dark (&:is(.dark *));
+/* Dark mode overrides */
+[data-theme="dark"],
+.dark {
+  /* --background: oklch(0.1 0 0); */
+  /* --foreground: oklch(0.95 0 0); */
+}
 
 /* Reduced Motion Support */
 @media (prefers-reduced-motion: reduce) {

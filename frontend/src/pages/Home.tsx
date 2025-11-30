@@ -1,8 +1,5 @@
 import { 
   Card, 
-  CardHeader, 
-  CardBody, 
-  CardFooter,
   Divider,
   Link
 } from "@heroui/react";
@@ -72,20 +69,20 @@ export const Home = () => {
         {pages.map((page) => (
           <StaggerItem key={page.title}>
             <Card className="hover:scale-105 transition-transform duration-200 h-full">
-              <CardHeader className="flex gap-3">
+              <Card.Header className="flex gap-3">
                 <div className={`text-2xl p-2 rounded-lg bg-gradient-to-br ${page.color} text-white`}>
                   {page.icon}
                 </div>
                 <div className="flex flex-col">
                   <p className="text-md font-bold">{page.title}</p>
                 </div>
-              </CardHeader>
+              </Card.Header>
               <Divider/>
-              <CardBody>
+              <Card.Body>
                 <p className="text-default-500">{page.description}</p>
-              </CardBody>
+              </Card.Body>
               <Divider/>
-              <CardFooter>
+              <Card.Footer>
                 {page.isExternal ? (
                   <Link isExternal href={page.href} color="primary">
                     Open Link
@@ -95,7 +92,7 @@ export const Home = () => {
                     Go to Page
                   </RouterLink>
                 )}
-              </CardFooter>
+              </Card.Footer>
             </Card>
           </StaggerItem>
         ))}
