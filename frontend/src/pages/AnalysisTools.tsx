@@ -17,6 +17,8 @@ import {
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 
+import { motion, AnimatePresence } from "framer-motion";
+
 interface AnalysisEvent {
   type: 'progress' | 'data' | 'error' | 'complete';
   message?: string;
@@ -36,91 +38,98 @@ const StreamViewer = ({ events }: { events: AnalysisEvent[] }) => {
   return (
     <ScrollShadow className="h-[600px] w-full" ref={scrollRef}>
       <div className="space-y-4 p-4">
-        {events.map((event, i) => (
-          <div key={i} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            {/* Progress Logs */}
-            {event.type === 'progress' && (
-              <div className="font-mono text-sm text-default-500 flex gap-2">
-                <span className="text-blue-500">[{new Date(event.timestamp || '').toLocaleTimeString()}]</span>
-                <span>{event.message}</span>
-              </div>
-            )}
+        <AnimatePresence initial={false}>
+          {events.map((event, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              {/* Progress Logs */}
+              {event.type === 'progress' && (
+                <div className="font-mono text-sm text-default-500 flex gap-2">
+                  <span className="text-blue-500">[{new Date(event.timestamp || '').toLocaleTimeString()}]</span>
+                  <span>{event.message}</span>
+                </div>
+              )}
 
-            {/* Errors */}
-            {event.type === 'error' && (
-              <Card className="bg-danger-50 border-danger-200 border">
-                <CardBody className="text-danger">
-                  <p className="font-bold">Error</p>
-                  <p>{event.message}</p>
-                </CardBody>
-              </Card>
-            )}
+              {/* Errors */}
+              {event.type === 'error' && (
+                <Card className="bg-danger-50 border-danger-200 border">
+                  <CardBody className="text-danger">
+                    <p className="font-bold">Error</p>
+                    <p>{event.message}</p>
+                  </CardBody>
+                </Card>
+              )}
 
-            {/* Structured Data Results */}
-            {event.type === 'data' && event.data && (
-              <Card className="bg-content2 dark:bg-content1 border-default-200 border">
-                <CardBody className="space-y-4">
-                   {/* Header if available */}
-                   {event.message && (
-                    <div className="flex items-center gap-2 text-success font-bold">
-                      <span>✓</span>
-                      <span>{event.message}</span>
-                    </div>
-                   )}
+              {/* Structured Data Results */}
+              {event.type === 'data' && event.data && (
+                <Card className="bg-content2 dark:bg-content1 border-default-200 border">
+                  <CardBody className="space-y-4">
+                     {/* Header if available */}
+                     {event.message && (
+                      <div className="flex items-center gap-2 text-success font-bold">
+                        <span>✓</span>
+                        <span>{event.message}</span>
+                      </div>
+                     )}
 
-                   {/* Question & Analysis Display */}
-                   {event.data.original_question && (
-                     <div>
-                        <h4 className="font-bold text-lg mb-2">Question</h4>
-                        <div className="bg-default-100 p-3 rounded-lg">
-                           {typeof event.data.original_question === 'string' 
-                              ? event.data.original_question 
-                              : event.data.original_question.query || JSON.stringify(event.data.original_question)}
-                        </div>
-                     </div>
-                   )}
+                     {/* Question & Analysis Display */}
+                     {event.data.original_question && (
+                       <div>
+                          <h4 className="font-bold text-lg mb-2">Question</h4>
+                          <div className="bg-default-100 p-3 rounded-lg">
+                             {typeof event.data.original_question === 'string' 
+                                ? event.data.original_question 
+                                : event.data.original_question.query || JSON.stringify(event.data.original_question)}
+                          </div>
+                       </div>
+                     )}
 
-                   {/* MCP Response */}
-                   {event.data.mcp_response && (
-                     <Accordion variant="splitted">
-                       <AccordionItem key="1" aria-label="MCP Response" title="Cloudflare Documentation Context">
-                         <div className="prose dark:prose-invert max-w-none text-sm">
+                     {/* MCP Response */}
+                     {event.data.mcp_response && (
+                       <Accordion variant="splitted">
+                         <AccordionItem key="1" aria-label="MCP Response" title="Cloudflare Documentation Context">
+                           <div className="prose dark:prose-invert max-w-none text-sm">
+                             <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                               {typeof event.data.mcp_response === 'string' 
+                                 ? event.data.mcp_response 
+                                 : JSON.stringify(event.data.mcp_response, null, 2)}
+                             </ReactMarkdown>
+                           </div>
+                         </AccordionItem>
+                       </Accordion>
+                     )}
+
+                     {/* AI Analysis */}
+                     {event.data.ai_analysis && (
+                       <div>
+                         <h4 className="font-bold text-lg mb-2 mt-4 text-primary">AI Analysis</h4>
+                         <div className="prose dark:prose-invert max-w-none">
                            <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                             {typeof event.data.mcp_response === 'string' 
-                               ? event.data.mcp_response 
-                               : JSON.stringify(event.data.mcp_response, null, 2)}
+                             {event.data.ai_analysis}
                            </ReactMarkdown>
                          </div>
-                       </AccordionItem>
-                     </Accordion>
-                   )}
-
-                   {/* AI Analysis */}
-                   {event.data.ai_analysis && (
-                     <div>
-                       <h4 className="font-bold text-lg mb-2 mt-4 text-primary">AI Analysis</h4>
-                       <div className="prose dark:prose-invert max-w-none">
-                         <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                           {event.data.ai_analysis}
-                         </ReactMarkdown>
                        </div>
-                     </div>
-                   )}
-                </CardBody>
-              </Card>
-            )}
+                     )}
+                  </CardBody>
+                </Card>
+              )}
 
-            {/* Completion */}
-            {event.type === 'complete' && (
-              <Card className="bg-success-50 border-success-200 border">
-                <CardBody className="text-success font-bold text-center">
-                  {event.data?.sessionId && <div className="text-sm mb-2">Session ID: {event.data.sessionId}</div>}
-                  Analysis Complete!
-                </CardBody>
-              </Card>
-            )}
-          </div>
-        ))}
+              {/* Completion */}
+              {event.type === 'complete' && (
+                <Card className="bg-success-50 border-success-200 border">
+                  <CardBody className="text-success font-bold text-center">
+                    {event.data?.sessionId && <div className="text-sm mb-2">Session ID: {event.data.sessionId}</div>}
+                    Analysis Complete!
+                  </CardBody>
+                </Card>
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </ScrollShadow>
   );

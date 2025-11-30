@@ -54,6 +54,8 @@ const pages = [
   }
 ];
 
+import { StaggerContainer, StaggerItem } from "../components/MotionWrapper";
+
 export const Home = () => {
   return (
     <div className="space-y-8">
@@ -66,36 +68,38 @@ export const Home = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {pages.map((page) => (
-          <Card key={page.title} className="hover:scale-105 transition-transform duration-200">
-            <CardHeader className="flex gap-3">
-              <div className={`text-2xl p-2 rounded-lg bg-gradient-to-br ${page.color} text-white`}>
-                {page.icon}
-              </div>
-              <div className="flex flex-col">
-                <p className="text-md font-bold">{page.title}</p>
-              </div>
-            </CardHeader>
-            <Divider/>
-            <CardBody>
-              <p className="text-default-500">{page.description}</p>
-            </CardBody>
-            <Divider/>
-            <CardFooter>
-              {page.isExternal ? (
-                <Link isExternal href={page.href} color="primary">
-                  Open Link
-                </Link>
-              ) : (
-                <RouterLink to={page.path!} className="text-primary hover:underline">
-                  Go to Page
-                </RouterLink>
-              )}
-            </CardFooter>
-          </Card>
+          <StaggerItem key={page.title}>
+            <Card className="hover:scale-105 transition-transform duration-200 h-full">
+              <CardHeader className="flex gap-3">
+                <div className={`text-2xl p-2 rounded-lg bg-gradient-to-br ${page.color} text-white`}>
+                  {page.icon}
+                </div>
+                <div className="flex flex-col">
+                  <p className="text-md font-bold">{page.title}</p>
+                </div>
+              </CardHeader>
+              <Divider/>
+              <CardBody>
+                <p className="text-default-500">{page.description}</p>
+              </CardBody>
+              <Divider/>
+              <CardFooter>
+                {page.isExternal ? (
+                  <Link isExternal href={page.href} color="primary">
+                    Open Link
+                  </Link>
+                ) : (
+                  <RouterLink to={page.path!} className="text-primary hover:underline">
+                    Go to Page
+                  </RouterLink>
+                )}
+              </CardFooter>
+            </Card>
+          </StaggerItem>
         ))}
-      </div>
+      </StaggerContainer>
     </div>
   );
 };
