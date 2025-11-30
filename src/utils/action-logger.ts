@@ -1,10 +1,12 @@
-import { Env } from "../types";
+import { eq, desc } from 'drizzle-orm';
+import { createDbClient } from "../db/client";
+import { actionLogs, ActionLog, NewActionLog } from "../db/schema";
 
 /**
  * Log an action to the D1 database
  */
 export async function logAction(
-  db: D1Database,
+  d1db: D1Database,
   actionType: string,
   actionDescription: string,
   options: {
@@ -16,21 +18,18 @@ export async function logAction(
 ): Promise<void> {
   try {
     const { sessionId, metadata, hasError = false, errorMessage } = options;
+    const db = createDbClient(d1db);
 
-    await db
-      .prepare(
-        `INSERT INTO action_logs (session_id, action_type, action_description, metadata_json, has_error, error_message)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        sessionId || null,
-        actionType,
-        actionDescription,
-        metadata ? JSON.stringify(metadata) : null,
-        hasError ? 1 : 0,
-        errorMessage || null
-      )
-      .run();
+    const newLog: NewActionLog = {
+      sessionId: sessionId || null,
+      actionType,
+      actionDescription,
+      metadataJson: metadata ? JSON.stringify(metadata) : null,
+      hasError,
+      errorMessage: errorMessage || null,
+    };
+
+    await db.insert(actionLogs).values(newLog);
 
     console.log(`[ACTION LOG] ${actionType}: ${actionDescription}`, {
       sessionId,
@@ -65,37 +64,31 @@ export async function logError(
  * Get action logs for a session
  */
 export async function getSessionActionLogs(
-  db: D1Database,
+  d1db: D1Database,
   sessionId: number
-): Promise<any[]> {
+): Promise<ActionLog[]> {
+  const db = createDbClient(d1db);
   const result = await db
-    .prepare(
-      `SELECT * FROM action_logs
-       WHERE session_id = ?
-       ORDER BY timestamp DESC`
-    )
-    .bind(sessionId)
-    .all();
-
-  return result.results || [];
+    .select()
+    .from(actionLogs)
+    .where(eq(actionLogs.sessionId, sessionId))
+    .orderBy(desc(actionLogs.timestamp));
+  return result;
 }
 
 /**
  * Get all action logs with error status
  */
 export async function getActionLogsWithErrors(
-  db: D1Database,
+  d1db: D1Database,
   limit: number = 100
-): Promise<any[]> {
+): Promise<ActionLog[]> {
+  const db = createDbClient(d1db);
   const result = await db
-    .prepare(
-      `SELECT * FROM action_logs
-       WHERE has_error = 1
-       ORDER BY timestamp DESC
-       LIMIT ?`
-    )
-    .bind(limit)
-    .all();
-
-  return result.results || [];
+    .select()
+    .from(actionLogs)
+    .where(eq(actionLogs.hasError, true))
+    .orderBy(desc(actionLogs.timestamp))
+    .limit(limit);
+  return result;
 }
