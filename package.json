@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "bunx wrangler dev",
     "build": "echo 'No build step needed for this worker setup'",
+    "build:frontend": "cd frontend && bun install && bun run build",
     "generate:migration": "bunx drizzle-kit generate",
     "migrate:remote": "bunx wrangler d1 migrations apply ask-cloudflare-mcp --remote",
-    "deploy": "bunx drizzle-kit generate && bunx wrangler d1 migrations apply ask-cloudflare-mcp --remote && bunx wrangler deploy",
+    "deploy": "npm run build:frontend && bunx drizzle-kit generate && bunx wrangler d1 migrations apply ask-cloudflare-mcp --remote && bunx wrangler deploy",
     "tail": "bunx wrangler tail",
     "types": "bunx wrangler types",
     "test": "bun test"
@@ -23,15 +24,16 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@google/genai": "^1.30.0",
     "@hono/zod-openapi": "^0.16.4",
     "@octokit/rest": "^21.0.2",
     "drizzle-orm": "^0.44.7",
-    "@google/genai": "^1.30.0",
     "hono": "^4.6.14",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^24.10.1",
     "drizzle-kit": "^0.31.7",
     "typescript": "^5.7.2",
     "wrangler": "^4.51.0"
