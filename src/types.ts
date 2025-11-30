@@ -20,6 +20,7 @@ export const SimpleQuestionSchema = z.object({
 
 export const SimpleQuestionsSchema = z.object({
   questions: z.array(z.string()).describe("Array of questions to process"),
+  use_gemini: z.boolean().optional().default(false).describe("Use Google Gemini via Cloudflare AI Gateway instead of Workers AI"),
 });
 
 // Detailed question schema for Python script replication
@@ -42,6 +43,7 @@ export const DetailedQuestionsSchema = z.object({
   questions: z.array(DetailedQuestionSchema).describe("Array of detailed questions"),
   repo_owner: z.string().optional().describe("GitHub repository owner"),
   repo_name: z.string().optional().describe("GitHub repository name"),
+  use_gemini: z.boolean().optional().default(false).describe("Use Google Gemini via Cloudflare AI Gateway instead of Workers AI"),
 });
 
 // Response schemas
@@ -118,7 +120,7 @@ export const AutoAnalyzeRepoSchema = z.object({
   repo_url: z.string().describe("GitHub repository URL (e.g., https://github.com/owner/repo)"),
   force_refresh: z.boolean().optional().describe("Force regeneration of questions, ignoring cache"),
   max_files: z.number().optional().describe("Maximum number of files to analyze (default: 50)"),
-  use_gemini: z.boolean().optional().default(false).describe("Use Google Gemini via Cloudflare AI Gateway instead of Workers AI"),
+  use_gemini: z.boolean().optional().default(false).describe("Use Google Gemini (gemini-2.5-flash) via Cloudflare AI Gateway instead of Workers AI"),
 });
 
 export const AutoAnalyzeResponseSchema = z.object({
@@ -153,6 +155,7 @@ export const AutoAnalyzeResponseSchema = z.object({
 export const PRAnalyzeSchema = z.object({
   pr_url: z.string().describe("GitHub Pull Request URL (e.g., https://github.com/owner/repo/pull/123)"),
   comment_filter: z.string().optional().describe("Filter comments by author (e.g., 'gemini-code-assist', 'copilot')"),
+  use_gemini: z.boolean().optional().default(false).describe("Use Google Gemini via Cloudflare AI Gateway instead of Workers AI"),
 });
 
 export const PRAnalyzeResponseSchema = z.object({

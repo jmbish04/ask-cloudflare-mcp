@@ -113,9 +113,9 @@ const simpleQuestionsRoute = createRoute({
 
 app.openapi(simpleQuestionsRoute, async (c) => {
   try {
-    const { questions } = c.req.valid("json");
+    const { questions, use_gemini = false } = c.req.valid("json");
     const env = c.env;
-    const provider = getProvider(false, env); // Default to Worker AI
+    const provider = getProvider(use_gemini, env);
 
     const results = await Promise.all(
       questions.map(async (question) => {
@@ -229,9 +229,9 @@ const detailedQuestionsRoute = createRoute({
 
 app.openapi(detailedQuestionsRoute, async (c) => {
   try {
-    const { questions, repo_owner, repo_name } = c.req.valid("json");
+    const { questions, repo_owner, repo_name, use_gemini = false } = c.req.valid("json");
     const env = c.env;
-    const provider = getProvider(false, env); // Default to Worker AI
+    const provider = getProvider(use_gemini, env);
 
     const results = await Promise.all(
       questions.map(async (question) => {
@@ -637,10 +637,11 @@ async function handlePRAnalyzeStream(
   comment_filter: string | undefined,
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  useGemini: boolean
 ) {
   const sse = createSSEStream();
-  const provider = getProvider(false, env); // Default to Worker AI for PR analysis for now
+  const provider = getProvider(useGemini, env);
 
   // Start streaming response
   c.header('Content-Type', 'text/event-stream');
@@ -842,7 +843,7 @@ async function handlePRAnalyzeStream(
 
 app.openapi(prAnalyzeRoute, async (c) => {
   try {
-    const { pr_url, comment_filter } = c.req.valid("json");
+    const { pr_url, comment_filter, use_gemini = false } = c.req.valid("json");
     const env = c.env;
 
     // Check if client wants streaming
@@ -856,11 +857,11 @@ app.openapi(prAnalyzeRoute, async (c) => {
     }
 
     const { owner, repo, prNumber } = parsed;
-    const provider = getProvider(false, env); // Default to Worker AI
+    const provider = getProvider(use_gemini, env);
 
     // If streaming requested, use streaming handler
     if (wantsStream) {
-      return handlePRAnalyzeStream(c, env, pr_url, comment_filter, owner, repo, prNumber) as any;
+      return handlePRAnalyzeStream(c, env, pr_url, comment_filter, owner, repo, prNumber, use_gemini) as any;
     }
 
     // Create session for tracking
