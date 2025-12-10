@@ -1,0 +1,64 @@
+
+> ask-cloudflare-mcp@1.0.0 tree:src
+> tree src
+
+src
+├── AGENTS.md
+├── agents
+│   ├── ChatAgent.ts
+│   └── health.ts
+├── ai
+│   ├── diagnostician.ts
+│   ├── gemini.ts
+│   ├── health.ts
+│   ├── sanitizer.ts
+│   ├── streaming.ts
+│   └── worker-ai.ts
+├── containers
+│   ├── health.ts
+│   ├── repo-analyzer-container.ts
+│   └── sandbox.ts
+├── core
+│   ├── action-logger.ts
+│   ├── health-check.ts
+│   └── session-manager.ts
+├── data
+│   ├── health.ts
+│   └── vectorize_service.ts
+├── db
+│   ├── client.ts
+│   ├── health.ts
+│   └── schema.ts
+├── git
+│   ├── container-repo.ts
+│   ├── github.ts
+│   ├── health.ts
+│   ├── migration-pillars.ts
+│   └── repo-analyzer.ts
+├── handlers
+│   └── scheduled.ts
+├── index.ts
+├── mcp
+│   ├── docs-fetcher.ts
+│   ├── health.ts
+│   ├── mcp-client.ts
+│   └── tools
+│       └── browser.ts
+├── routes
+│   ├── api.ts
+│   ├── health.ts
+│   └── websocket.ts
+├── tools
+│   └── sandbox-tool.ts
+├── types.ts
+├── utils
+│   └── cloudflare-bindings.ts
+└── workflows
+    ├── engineer-workflow.ts
+    ├── governance-workflow.ts
+    ├── health.ts
+    ├── ingestion-workflow.ts
+    ├── maintenance-workflow.ts
+    └── research-workflow.ts
+
+15 directories, 43 files

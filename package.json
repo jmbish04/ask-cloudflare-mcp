@@ -4,15 +4,28 @@
   "description": "Cloudflare Worker that acts as both an API and MCP server with GitHub integration",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "bunx wrangler dev",
+    "dev": "concurrently \"bunx wrangler dev\" \"cd frontend && bun run dev\"",
+    "dev:backend": "bunx wrangler dev",
+    "dev:frontend": "cd frontend && bun run dev",
     "build": "echo 'No build step needed for this worker setup'",
     "build:frontend": "cd frontend && bun install && bun run build",
     "generate:migration": "bunx drizzle-kit generate",
-    "migrate:remote": "bunx wrangler d1 migrations apply ask-cloudflare-mcp --remote",
-    "deploy": "npm run build:frontend && bunx drizzle-kit generate && bunx wrangler d1 migrations apply ask-cloudflare-mcp --remote && bunx wrangler deploy",
+    "migrate:remote": "bunx wrangler d1 migrations apply DB --remote",
+    "migrate:local": "bunx wrangler d1 migrations apply DB --local",
+    "deploy": "npm run check:structure && npm run build:frontend && bunx drizzle-kit generate && npm run migrate:remote && bunx wrangler deploy",
+    "deploy:dry-run": "npm run check:structure && npm run build:frontend && bunx drizzle-kit generate && bunx wrangler deploy --dry-run",
     "tail": "bunx wrangler tail",
-    "types": "bunx wrangler types",
-    "test": "bun test"
+    "types": "wrangler types && node scripts/tests/utils/print-env-usage.js",
+    "test": "bun test",
+    "test:api:local": "scripts/tests/.venv/bin/python scripts/tests/test_comprehensive.py --env local",
+    "test:api:deployed": "scripts/tests/.venv/bin/python scripts/tests/test_comprehensive.py --env deployed",
+    "test:health": "scripts/tests/.venv/bin/python scripts/tests/test_endpoints.py --health",
+    "test:ai-gateway": "scripts/tests/.venv/bin/python scripts/tests/test_ai_gateway.py",
+    "check:structure": "bun scripts/tests/utils/check-backend-structure.ts",
+    "tree:src": "tree src",
+    "tree:frontend": "tree frontend",
+    "tree:all": "tree -I 'node_modules|.git|.wrangler|dist|.gemini|coverage|.DS_Store'",
+    "latest:health": "node scripts/d1-queries/get_latest_health_record.js"
   },
   "keywords": [
     "cloudflare",
@@ -24,18 +37,29 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/google": "^2.0.45",
+    "@ai-sdk/openai": "^2.0.80",
+    "@cloudflare/ai": "^1.2.2",
+    "@cloudflare/containers": "^0.0.30",
+    "@cloudflare/puppeteer": "^1.0.4",
+    "@cloudflare/sandbox": "^0.6.3",
+    "@cloudflare/vite-plugin": "^1.17.0",
     "@google/genai": "^1.30.0",
     "@hono/zod-openapi": "^0.16.4",
     "@octokit/rest": "^21.0.2",
+    "agents": "^0.2.31",
+    "ai": "^5.0.108",
     "drizzle-orm": "^0.44.7",
     "hono": "^4.6.14",
+    "mustache": "^4.2.0",
+    "openai": "^6.10.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241127.0",
     "@types/node": "^24.10.1",
+    "concurrently": "^9.1.2",
     "drizzle-kit": "^0.31.7",
     "typescript": "^5.7.2",
-    "wrangler": "^4.51.0"
+    "wrangler": "^4.53.0"
   }
 }

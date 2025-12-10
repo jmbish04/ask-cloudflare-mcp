@@ -1,18 +1,7 @@
 import { z } from "zod";
 
 // Environment bindings
-export interface Env {
-  AI: Ai;
-  GITHUB_TOKEN: string;
-  MCP_API_URL: string;
-  ASSETS: Fetcher;
-  QUESTIONS_KV: KVNamespace;
-  DB: D1Database;
-  // Gemini secrets
-  CF_AIG_TOKEN?: string;
-  CLOUDFLARE_ACCOUNT_ID?: string;
-  WORKER_URL?: string;
-}
+export type Env = Cloudflare.Env;
 
 // Question schema for simple pathway
 export const SimpleQuestionSchema = z.object({
@@ -231,3 +220,27 @@ export type AutoAnalyzeRepo = z.infer<typeof AutoAnalyzeRepoSchema>;
 export type AutoAnalyzeResponse = z.infer<typeof AutoAnalyzeResponseSchema>;
 export type PRAnalyze = z.infer<typeof PRAnalyzeSchema>;
 export type PRAnalyzeResponse = z.infer<typeof PRAnalyzeResponseSchema>;
+
+// Migration Pillar Types
+export interface MigrationPillar {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: 'frontend' | 'backend' | 'storage' | 'compute' | 'networking' | 'security' | 'observability';
+  bindings: string[];
+  questions: DetailedQuestion[];
+  status: 'pending' | 'analyzing' | 'completed' | 'error';
+  findings?: string[];
+  progress?: number; // 0-100
+}
+
+export interface MigrationPlan {
+  pillars: MigrationPillar[];
+  overall_progress: number;
+  repo_context: {
+    owner: string;
+    repo: string;
+    detected_stack?: string;
+  };
+}

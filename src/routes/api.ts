@@ -24,18 +24,19 @@ const SessionSchema = z.object({
   updatedAt: z.string(),
 });
 
-import { queryMCP } from "../utils/mcp-client";
-import { rewriteQuestionForMCP as rewriteWorker, analyzeResponseAndGenerateFollowUps as analyzeWorker, analyzeCommentForCloudflare as analyzeCommentWorker } from "../utils/worker-ai";
-import { rewriteQuestionForMCP as rewriteGemini, analyzeResponseAndGenerateFollowUps as analyzeGemini } from "../utils/gemini";
-import { extractCodeSnippets, parsePRUrl, getPRComments, filterCommentsByAuthor } from "../utils/github";
+import { queryMCP } from "../mcp/mcp-client";
+import { rewriteQuestionForMCP as rewriteWorker, analyzeResponseAndGenerateFollowUps as analyzeWorker, analyzeCommentForCloudflare as analyzeCommentWorker } from "../ai/providers/worker-ai";
+import { rewriteQuestionForMCP as rewriteGemini, analyzeResponseAndGenerateFollowUps as analyzeGemini } from "../ai/providers/gemini";
+import { extractCodeSnippets, parsePRUrl, getPRComments, filterCommentsByAuthor } from "../mcp/tools/git/github";
 import {
   parseRepoUrl,
   analyzeRepoAndGenerateQuestions,
-  evaluateQuestionSufficiency
-} from "../utils/repo-analyzer";
-import { createSession, addQuestion, getAllSessions, getSession, getSessionQuestions } from "../utils/session-manager";
-import { logAction, logError, getSessionActionLogs } from "../utils/action-logger";
-import { createSSEStream, getSSEHeaders, ProgressTracker } from "../utils/streaming";
+  evaluateQuestionSufficiency,
+  organizeQuestionsByPillars
+} from "../mcp/tools/git/repo-analyzer";
+import { createSession, addQuestion, getAllSessions, getSession, getSessionQuestions } from "../core/session-manager";
+import { logAction, logError, getSessionActionLogs } from "../core/action-logger";
+import { createSSEStream, getSSEHeaders, ProgressTracker } from "../ai/utils/streaming";
 
 const app = new OpenAPIHono<{ Bindings: Env }>();
 
@@ -50,7 +51,7 @@ const getProvider = (useGemini: boolean, env: any) => {
       analyze: (q: string, resp: any) => analyzeGemini(env, q, resp),
       // Note: analyzeCommentForCloudflare is currently only implemented in worker-ai
       // If you implement it in gemini.ts, add it here. For now, fallback or throw.
-      analyzeComment: (comment: string, ctx?: any) => analyzeCommentWorker(env.AI, comment, ctx) 
+      analyzeComment: (comment: string, ctx?: any) => analyzeCommentWorker(env.AI, comment, ctx)
     };
   }
   return {
@@ -140,15 +141,15 @@ app.openapi(simpleQuestionsRoute, async (c) => {
           sse.sendProgress(`🤖 Using AI Provider: ${use_gemini ? "Google Gemini 2.5 Flash" : "Cloudflare Workers AI"}`);
 
           const results = [];
-          
+
           for (const [index, question] of questions.entries()) {
             sse.sendProgress(`\n📝 [${index + 1}/${questions.length}] Processing: "${question}"`);
-            
+
             try {
               // Step 1: Rewrite question
               sse.sendProgress(`   🔄 Rewriting question...`);
               const rewrittenQuestion = await provider.rewrite(question);
-              
+
               // Step 2: Query MCP
               sse.sendProgress(`   📚 Querying Cloudflare docs...`);
               const mcpResponse = await queryMCP(rewrittenQuestion, undefined, env.MCP_API_URL);
@@ -208,7 +209,7 @@ app.openapi(simpleQuestionsRoute, async (c) => {
               });
             }
           }
-          
+
           sse.complete({
             sessionId,
             results,
@@ -224,7 +225,7 @@ app.openapi(simpleQuestionsRoute, async (c) => {
 
       return new Response(sse.stream, {
         headers: getSSEHeaders(),
-      });
+      }) as any;
     }
 
     // --- Standard JSON Logic (Non-Streaming) ---
@@ -383,17 +384,17 @@ app.openapi(detailedQuestionsRoute, async (c) => {
 
         for (const [index, question] of questions.entries()) {
           await log(`\n📝 [${index + 1}/${questions.length}] Processing: "${question.query}"`);
-          
+
           try {
             // Step 1: Extract code snippets
             let codeSnippets: any[] = [];
             if (repo_owner && repo_name && question.relevant_code_files.length > 0) {
               await log(`   🔍 Extracting code snippets...`);
               codeSnippets = await extractCodeSnippets(
+                env,
                 repo_owner,
                 repo_name,
-                question.relevant_code_files as any,
-                env.GITHUB_TOKEN
+                question.relevant_code_files as any
               );
             }
 
@@ -482,10 +483,10 @@ app.openapi(detailedQuestionsRoute, async (c) => {
           let codeSnippets: any[] = [];
           if (repo_owner && repo_name && question.relevant_code_files.length > 0) {
             codeSnippets = await extractCodeSnippets(
+              env,
               repo_owner,
               repo_name,
-              question.relevant_code_files as any,
-              env.GITHUB_TOKEN
+              question.relevant_code_files as any
             );
           }
 
@@ -566,6 +567,306 @@ app.openapi(detailedQuestionsRoute, async (c) => {
       { error: error instanceof Error ? error.message : "Unknown error" },
       500
     );
+  }
+});
+
+/**
+ * Deep Research Endpoint
+ */
+const researchRoute = createRoute({
+  method: "post",
+  path: "/research",
+  operationId: "dispatchResearch",
+  tags: ["Questions"],
+  summary: "Dispatch a Deep Research task",
+  description: "Queues a deep research task using the new Workflow architecture",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            query: z.string(),
+            mode: z.enum(['feasibility', 'enrichment', 'error_fix']),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Task queued successfully",
+      content: {
+        "application/json": {
+          schema: z.object({
+            status: z.string(),
+            sessionId: z.string(),
+          }),
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
+          }),
+        },
+      },
+    },
+  },
+});
+
+app.openapi(researchRoute, async (c) => {
+  try {
+    const { query, mode } = c.req.valid("json");
+    const sessionId = crypto.randomUUID();
+
+    // Initialize KV first to avoid race condition where polling happens before workflow starts
+    await c.env.QUESTIONS_KV.put(`research:${sessionId}`, JSON.stringify({
+      status: 'queued',
+      timestamp: new Date().toISOString(),
+      query,
+      mode
+    }));
+
+    await c.env.RESEARCH_QUEUE.send({
+      sessionId,
+      query,
+      mode
+    });
+
+    return c.json({ status: 'queued', sessionId }, 200);
+  } catch (error) {
+    console.error("Error dispatching research task:", error);
+    return c.json({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
+  }
+});
+
+const researchStatusRoute = createRoute({
+  method: "get",
+  path: "/research/{sessionId}",
+  operationId: "getResearchStatus",
+  tags: ["Questions"],
+  summary: "Get Deep Research task status",
+  parameters: [
+    {
+      name: "sessionId",
+      in: "path",
+      required: true,
+      schema: { type: "string" },
+    },
+  ],
+  responses: {
+    200: {
+      description: "Task status",
+      content: {
+        "application/json": {
+          schema: z.object({
+            status: z.string(),
+            data: z.any().optional(),
+            report: z.string().optional(),
+            timestamp: z.string(),
+          }),
+        },
+      },
+    },
+    404: {
+      description: "Session not found",
+    },
+  },
+});
+
+app.openapi(researchStatusRoute, async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const result = await c.env.QUESTIONS_KV.get(`research:${sessionId}`, "json");
+
+  if (!result) {
+    return c.json({ error: "Session not found" }, 404);
+  }
+
+  return c.json(result as any, 200);
+});
+
+/**
+ * Engineer Endpoint - Fix Code
+ */
+const engineerFixRoute = createRoute({
+  method: "post",
+  path: "/engineer/fix",
+  operationId: "dispatchEngineerFix",
+  tags: ["Engineer"],
+  summary: "Dispatch an Engineering code fix task",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            sessionId: z.string(),
+            repoUrl: z.string(),
+            filePath: z.string(),
+            instruction: z.string(),
+            currentCode: z.string().optional()
+          })
+        }
+      }
+    }
+  },
+  responses: {
+    200: { description: "Task queued", content: { "application/json": { schema: z.object({ status: z.string(), id: z.string() }) } } },
+    500: { description: "Error" }
+  }
+});
+
+app.openapi(engineerFixRoute, async (c) => {
+  try {
+    const params = c.req.valid("json");
+    const id = await c.env.ENGINEER_WORKFLOW.create({
+      id: crypto.randomUUID(),
+      params
+    });
+    return c.json({ status: "queued", id: id.id }, 200);
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+/**
+ * Governance Endpoint - Sync Docs
+ */
+const governanceSyncRoute = createRoute({
+  method: "post",
+  path: "/governance/sync",
+  operationId: "dispatchGovernanceSync",
+  tags: ["Governance"],
+  summary: "Dispatch a Governance documentation sync",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            repoUrl: z.string()
+          })
+        }
+      }
+    }
+  },
+  responses: {
+    200: { description: "Task queued", content: { "application/json": { schema: z.object({ status: z.string(), id: z.string() }) } } },
+    500: { description: "Error" }
+  }
+});
+
+app.openapi(governanceSyncRoute, async (c) => {
+  try {
+    const { repoUrl } = c.req.valid("json");
+    const id = await c.env.GOVERNANCE_WORKFLOW.create({
+      id: crypto.randomUUID(),
+      params: { repoUrl }
+    });
+    return c.json({ status: "queued", id: id.id }, 200);
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+/**
+ * Chat Agent Endpoint
+ */
+const chatAgentRoute = createRoute({
+  method: "post",
+  path: "/agent/chat",
+  operationId: "chatWithAgent",
+  tags: ["Agent"],
+  summary: "Chat with the stateful AI Agent",
+  request: {
+    query: z.object({
+      sessionId: z.string().optional().default("default")
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            prompt: z.string()
+          })
+        }
+      }
+    }
+  },
+  responses: {
+    200: { description: "Agent response", content: { "application/json": { schema: z.object({ response: z.string() }) } } },
+    500: { description: "Error" }
+  }
+});
+
+app.openapi(chatAgentRoute, async (c) => {
+  try {
+    const { prompt } = c.req.valid("json");
+    const sessionId = c.req.query("sessionId") || "default";
+
+    // Get Durable Object ID
+    const id = c.env.CHAT_AGENT.idFromName(sessionId);
+    const stub = c.env.CHAT_AGENT.get(id);
+
+    // Call the Agent
+    const response = await stub.fetch(new Request("https://agent/chat", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+      headers: { "Content-Type": "application/json" }
+    }));
+
+    if (!response.ok) {
+      throw new Error(`Agent error: ${await response.text()}`);
+    }
+
+    const data = await response.json();
+    return c.json(data as any, 200);
+
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+/**
+ * Ingestion Endpoint
+ */
+const ingestRoute = createRoute({
+  method: "post",
+  path: "/ingest",
+  operationId: "ingestUrl",
+  tags: ["Knowledge"],
+  summary: "Ingest a URL into the knowledge base",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            url: z.string().url(),
+            tags: z.array(z.string()).optional()
+          })
+        }
+      }
+    }
+  },
+  responses: {
+    200: { description: "Ingestion queued", content: { "application/json": { schema: z.object({ status: z.string(), id: z.string() }) } } },
+    500: { description: "Error" }
+  }
+});
+
+app.openapi(ingestRoute, async (c) => {
+  try {
+    const { url, tags } = c.req.valid("json");
+
+    // Trigger Ingestion Workflow
+    const id = await c.env.INGESTION_WORKFLOW.create({
+      id: crypto.randomUUID(),
+      params: { url, tags }
+    });
+
+    return c.json({ status: "queued", id: id.id }, 200);
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
   }
 });
 
@@ -677,15 +978,16 @@ app.openapi(autoAnalyzeRoute, async (c) => {
           if (questions.length === 0) {
             sse.sendProgress(`🧠 Cache miss. Analyzing repository structure and docs...`);
             sse.sendProgress(`   (This may take 10-20 seconds...)`);
-            
-            // Pass use_gemini flag to repo analyzer
+
+            // Pass use_gemini flag and progress callback to repo analyzer
             const generatedQuestions = await analyzeRepoAndGenerateQuestions(
               env, // Pass full env
               owner,
               repo,
-              env.GITHUB_TOKEN,
               max_files,
-              use_gemini // Pass the flag
+              use_gemini, // Pass the flag
+              true, // Use container
+              (msg) => sse.sendProgress(msg) // Progress callback
             );
 
             const fundamentalQuestion: DetailedQuestion = {
@@ -701,49 +1003,104 @@ app.openapi(autoAnalyzeRoute, async (c) => {
             await env.QUESTIONS_KV.put(cacheKey, JSON.stringify(questions), { expirationTtl: 86400 * 7 });
           }
 
-          sse.sendProgress(`\n⚡ Processing ${questions.length} questions against Cloudflare Docs...`);
+          // Organize questions into migration pillars
+          sse.sendProgress(`📋 Organizing questions into migration pillars...`);
+          const pillars = organizeQuestionsByPillars(questions);
 
-          for (const [index, question] of questions.entries()) {
-            sse.sendProgress(`   [${index + 1}/${questions.length}] Asking: "${question.query}"...`);
-            try {
-              const rewritten = await provider.rewrite(question.query, {
-                bindings: question.cloudflare_bindings_involved,
-                libraries: question.node_libs_involved,
-                tags: question.tags
-              });
+          // Send the migration plan
+          sse.sendPlan({
+            pillars: pillars.map(p => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              icon: p.icon,
+              category: p.category,
+              bindings: p.bindings,
+              question_count: p.questions.length,
+              status: p.status,
+            })),
+            repo_context: { owner, repo },
+          });
 
-              const mcpRes = await queryMCP(rewritten, undefined, env.MCP_API_URL);
-              const { analysis } = await provider.analyze(question.query, mcpRes);
+          sse.sendProgress(`\n⚡ Processing ${questions.length} questions across ${pillars.filter(p => p.questions.length > 0).length} pillars...`);
 
-              // Record in DB
-              await addQuestion(
-                env.DB,
-                sessionDbId,
-                question.query,
-                mcpRes,
-                'ai_generated',
-                {
-                  rewritten_question: rewritten,
-                  analysis,
-                  tags: question.tags
-                }
+          // Process questions pillar by pillar
+          for (const pillar of pillars) {
+            if (pillar.questions.length === 0) continue;
+
+            sse.sendPillarStart(pillar.id, pillar.name, `Starting analysis of ${pillar.name}...`);
+
+            const findings: string[] = [];
+
+            for (const [qIndex, question] of pillar.questions.entries()) {
+              const progress = Math.round(((qIndex + 1) / pillar.questions.length) * 100);
+              sse.sendPillarProgress(
+                pillar.id,
+                pillar.name,
+                progress,
+                `[${qIndex + 1}/${pillar.questions.length}] Analyzing: "${question.query.substring(0, 60)}..."`
               );
 
-              const result = {
-                original_question: question,
-                rewritten_question: rewritten,
-                mcp_response: mcpRes,
-                ai_analysis: analysis
-              };
+              try {
+                const rewritten = await provider.rewrite(question.query, {
+                  bindings: question.cloudflare_bindings_involved,
+                  libraries: question.node_libs_involved,
+                  tags: question.tags
+                });
 
-              sse.sendData(result, `      -> ✅ Analysis complete.`);
-            } catch (err) {
-              const errorMsg = err instanceof Error ? err.message : "Unknown";
-              sse.sendProgress(`      -> ❌ Error: ${errorMsg}`);
-              sse.sendError(err as Error);
+                // Query MCP with Cloudflare docs
+                const mcpRes = await queryMCP(rewritten, undefined, env.MCP_API_URL);
+
+                // Analyze compatibility with Workers AI
+                const { analysis } = await provider.analyze(question.query, mcpRes);
+
+                // Extract key findings from analysis
+                const findingMatch = analysis.match(/(?:finding|conclusion|compatible|migration|recommendation)[:]\s*(.+?)(?:\.|$)/i);
+                if (findingMatch) {
+                  findings.push(findingMatch[1].trim());
+                } else if (analysis.length > 0) {
+                  // Extract first sentence as finding
+                  const firstSentence = analysis.split('.')[0].trim();
+                  if (firstSentence.length > 20) {
+                    findings.push(firstSentence);
+                  }
+                }
+
+                // Record in DB
+                await addQuestion(
+                  env.DB,
+                  sessionDbId,
+                  question.query,
+                  mcpRes,
+                  'ai_generated',
+                  {
+                    rewritten_question: rewritten,
+                    analysis,
+                    tags: question.tags,
+                    pillar_id: pillar.id
+                  }
+                );
+
+                const result = {
+                  pillar_id: pillar.id,
+                  pillar_name: pillar.name,
+                  original_question: question,
+                  rewritten_question: rewritten,
+                  mcp_response: mcpRes,
+                  ai_analysis: analysis
+                };
+
+                sse.sendData(result, `✅ ${pillar.name}: Question analyzed`);
+              } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : "Unknown";
+                sse.sendProgress(`      -> ❌ Error in ${pillar.name}: ${errorMsg}`);
+                sse.sendError(err as Error);
+              }
             }
+
+            sse.sendPillarComplete(pillar.id, pillar.name, findings, `Completed ${pillar.name} analysis`);
           }
-          
+
           sse.complete({
             repo_url,
             repo_owner: owner,
@@ -764,7 +1121,7 @@ app.openapi(autoAnalyzeRoute, async (c) => {
 
       return new Response(sse.stream, {
         headers: getSSEHeaders(),
-      });
+      }) as any;
     }
 
     // --- Standard JSON Logic (Non-Streaming) ---
@@ -784,7 +1141,6 @@ app.openapi(autoAnalyzeRoute, async (c) => {
         env,
         owner,
         repo,
-        env.GITHUB_TOKEN,
         max_files,
         use_gemini
       );
@@ -810,10 +1166,10 @@ app.openapi(autoAnalyzeRoute, async (c) => {
           let codeSnippets: any[] = [];
           if (question.relevant_code_files.length > 0) {
             codeSnippets = await extractCodeSnippets(
+              env,
               owner,
               repo,
-              question.relevant_code_files as any,
-              env.GITHUB_TOKEN
+              question.relevant_code_files as any
             );
           }
 
@@ -994,7 +1350,7 @@ async function handlePRAnalyzeStream(
 
       // Get all PR comments
       sse.sendProgress(`💬 Fetching comments from PR #${prNumber}...`);
-      const allComments = await getPRComments(owner, repo, prNumber, env.GITHUB_TOKEN);
+      const allComments = await getPRComments(env, owner, repo, prNumber);
 
       // Filter comments if requested
       const comments = filterCommentsByAuthor(allComments, comment_filter);
@@ -1180,7 +1536,7 @@ app.openapi(prAnalyzeRoute, async (c) => {
 
     // Check if client wants streaming
     const wantsStream = c.req.query('stream') === 'true' ||
-                       c.req.header('accept')?.includes('text/event-stream');
+      c.req.header('accept')?.includes('text/event-stream');
 
     // Parse PR URL
     const parsed = parsePRUrl(pr_url);
@@ -1209,7 +1565,7 @@ app.openapi(prAnalyzeRoute, async (c) => {
 
     // Get all PR comments
     console.log(`Fetching comments from PR #${prNumber}...`);
-    const allComments = await getPRComments(owner, repo, prNumber, env.GITHUB_TOKEN);
+    const allComments = await getPRComments(env, owner, repo, prNumber);
 
     // Filter comments if requested
     const comments = filterCommentsByAuthor(allComments, comment_filter);

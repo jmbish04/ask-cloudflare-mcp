@@ -5,15 +5,46 @@ import apiRoutes from "./routes/api";
 import healthRoutes from "./routes/health";
 import { handleWebSocket } from "./routes/websocket";
 import { handleScheduled } from "./handlers/scheduled";
+import { RepoAnalyzerContainerConfig } from "./containers/repo-analyzer-container";
+import { ResearchWorkflow } from "./workflows/research-workflow";
+import browserRender from "./mcp/tools/browserRenderApi";
 
 const app = new OpenAPIHono<{ Bindings: Env }>();
 
 // CORS middleware
 app.use("/*", cors());
 
+// Auth middleware
+app.use("/api/*", async (c, next) => {
+  const apiKey = c.req.header("x-api-key") || c.req.query("key");
+  const validKey = c.env.WORKER_API_KEY;
+
+  // Bypass if no key configured (for safety/dev, though user said they set it)
+  // or if key matches
+  if (validKey && apiKey !== validKey) {
+    return c.json({ error: "Unauthorized: Invalid API Key" }, 401);
+  }
+
+  if (validKey && !apiKey) {
+    return c.json({ error: "Unauthorized: Missing API Key" }, 401);
+  }
+
+  await next();
+});
+
 // API routes
 app.route("/api", apiRoutes);
-app.route("/api", healthRoutes);
+app.route("/api/health", healthRoutes);
+app.route("/api/health", healthRoutes);
+app.route("/api/browser", browserRender);
+
+// Chat Agent Route
+app.post("/api/chat", async (c) => {
+  const id = c.env.CHAT_AGENT.idFromName("default");
+  const stub = c.env.CHAT_AGENT.get(id);
+  // Forward the request to the Durable Object
+  return stub.fetch(c.req.raw);
+});
 
 // Root endpoint - serve static landing page
 app.get("/", async (c) => {
@@ -140,23 +171,37 @@ app.get("/ws", async (c) => {
 });
 
 // 404 handler
-app.notFound((c) => {
-  return c.json(
-    {
-      error: "Not Found",
-      message: "The requested endpoint does not exist",
-      availableEndpoints: [
-        "/",
-        "/api/health",
-        "/api/questions/simple",
-        "/api/questions/detailed",
-        "/openapi.json",
-        "/swagger",
-        "/ws",
-      ],
-    },
-    404
-  );
+app.notFound(async (c) => {
+  const url = new URL(c.req.url);
+
+  // If it's an API route, return strict JSON 404
+  if (url.pathname.startsWith("/api")) {
+    return c.json(
+      {
+        error: "Not Found",
+        message: "The requested endpoint does not exist",
+        availableEndpoints: [
+          "/",
+          "/api/health",
+          "/api/questions/simple",
+          "/api/questions/detailed",
+          "/openapi.json",
+          "/swagger",
+          "/ws",
+        ],
+      },
+      404
+    );
+  }
+
+  // Otherwise, assume it's a frontend route and serve index.html
+  // allowing React Router to handle the 404 or page rendering
+  try {
+    const asset = await c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url)));
+    return asset;
+  } catch (e) {
+    return c.text("SPA index.html not found", 404);
+  }
 });
 
 // Error handler
@@ -172,8 +217,45 @@ app.onError((err, c) => {
 });
 
 // Scheduled handler
+// Scheduled handler
 export default {
   fetch: app.fetch,
-  scheduled: handleScheduled
+  scheduled: handleScheduled,
+
+  // Queue Handler for Deep Research
+  async queue(batch: MessageBatch<any>, env: Env) {
+    for (const message of batch.messages) {
+      try {
+        console.log(`Processing queue message ${message.id}`);
+        // Assume message body contains { sessionId, query, mode }
+        await env.RESEARCH_WORKFLOW.create({
+          id: crypto.randomUUID(),
+          params: message.body
+        });
+        message.ack();
+      } catch (e) {
+        console.error("Queue processing error:", e);
+        message.retry();
+      }
+    }
+  }
 };
+
+// Export the Workflow class so Cloudflare can find it
+export { ResearchWorkflow };
+export { EngineerWorkflow } from "./workflows/engineer-workflow";
+export { GovernanceWorkflow } from "./workflows/governance-workflow";
+export { IngestionWorkflow } from "./workflows/ingestion-workflow";
+export { MaintenanceWorkflow } from "./workflows/maintenance-workflow";
+
+
+// Export container configuration
+export { RepoAnalyzerContainerConfig };
+
+// Export Agents
+export { BaseAgent } from "./ai/agents/BaseAgent";
+export { ChatAgent } from "./ai/agents/ChatAgent";
+
+// Export Sandbox Container
+export { Sandbox } from "./containers/sandbox";
 

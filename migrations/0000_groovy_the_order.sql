@@ -1,4 +1,4 @@
-CREATE TABLE `action_logs` (
+CREATE TABLE IF NOT EXISTS `action_logs` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`session_id` integer,
 	`timestamp` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE `action_logs` (
 	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
-CREATE TABLE `questions` (
+CREATE TABLE IF NOT EXISTS `questions` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`session_id` integer NOT NULL,
 	`question` text NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE `questions` (
 	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE TABLE `sessions` (
+CREATE TABLE IF NOT EXISTS `sessions` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`session_id` text NOT NULL,
 	`timestamp` text DEFAULT CURRENT_TIMESTAMP NOT NULL,

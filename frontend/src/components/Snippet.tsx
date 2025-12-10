@@ -33,7 +33,7 @@ export const Snippet = ({ children, symbol = "$", className = "" }: SnippetProps
       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button 
           size="sm" 
-          variant="flat" 
+          variant="ghost" 
           onPress={handleCopy}
           className="min-w-unit-8 h-unit-8"
         >

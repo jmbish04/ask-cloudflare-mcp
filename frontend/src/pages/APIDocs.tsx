@@ -9,11 +9,11 @@ export const APIDocs = () => {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold">API Documentation</h2>
-      <Card className="bg-white dark:bg-white"> 
+      <Card className="bg-white dark:bg-white h-full min-h-[800px]"> 
         {/* Force white background because SwaggerUI themes are light by default */}
-        <Card.Body>
+        <Card.Content>
           <SwaggerUI url={`${workerUrl}/openapi.json`} />
-        </Card.Body>
+        </Card.Content>
       </Card>
     </div>
   );

@@ -1,0 +1,73 @@
+{
+  "../node_modules/@cloudflare/puppeteer/lib/esm/puppeteer/common/BrowserWebSocketTransport.js": {
+    "file": "assets/BrowserWebSocketTransport-_4zER8KH.js",
+    "name": "BrowserWebSocketTransport",
+    "src": "../node_modules/@cloudflare/puppeteer/lib/esm/puppeteer/common/BrowserWebSocketTransport.js",
+    "isDynamicEntry": true
+  },
+  "../node_modules/@cloudflare/puppeteer/lib/esm/puppeteer/node/NodeWebSocketTransport.js": {
+    "file": "assets/NodeWebSocketTransport-lTU9HFmF.js",
+    "name": "NodeWebSocketTransport",
+    "src": "../node_modules/@cloudflare/puppeteer/lib/esm/puppeteer/node/NodeWebSocketTransport.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-FekMgGBj.js"
+    ]
+  },
+  "../node_modules/agents/node_modules/ai/dist/index.mjs": {
+    "file": "assets/index-DI2RJ4SR.js",
+    "name": "index",
+    "src": "../node_modules/agents/node_modules/ai/dist/index.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-FekMgGBj.js"
+    ]
+  },
+  "../node_modules/mimetext/dist/mimetext.node.es.js": {
+    "file": "assets/mimetext.node.es-BLW8ejUa.js",
+    "name": "mimetext.node.es",
+    "src": "../node_modules/mimetext/dist/mimetext.node.es.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-FekMgGBj.js"
+    ]
+  },
+  "_index-BIR5nN81.js": {
+    "file": "assets/index-BIR5nN81.js",
+    "name": "index",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-FekMgGBj.js"
+    ]
+  },
+  "_worker-entry-FekMgGBj.js": {
+    "file": "assets/worker-entry-FekMgGBj.js",
+    "name": "worker-entry",
+    "dynamicImports": [
+      "_index-BIR5nN81.js",
+      "node_modules/unenv/dist/runtime/node/fs/promises.mjs",
+      "../node_modules/@cloudflare/puppeteer/lib/esm/puppeteer/node/NodeWebSocketTransport.js",
+      "../node_modules/@cloudflare/puppeteer/lib/esm/puppeteer/common/BrowserWebSocketTransport.js",
+      "../node_modules/agents/node_modules/ai/dist/index.mjs",
+      "../node_modules/mimetext/dist/mimetext.node.es.js"
+    ]
+  },
+  "node_modules/unenv/dist/runtime/node/fs/promises.mjs": {
+    "file": "assets/promises-DwSba22F.js",
+    "name": "promises",
+    "src": "node_modules/unenv/dist/runtime/node/fs/promises.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-FekMgGBj.js"
+    ]
+  },
+  "virtual:cloudflare/worker-entry": {
+    "file": "index.js",
+    "name": "index",
+    "src": "virtual:cloudflare/worker-entry",
+    "isEntry": true,
+    "imports": [
+      "_worker-entry-FekMgGBj.js"
+    ]
+  }
+}
