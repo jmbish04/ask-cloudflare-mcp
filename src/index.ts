@@ -35,7 +35,7 @@ app.use("/api/*", async (c, next) => {
 // API routes
 app.route("/api", apiRoutes);
 app.route("/api/health", healthRoutes);
-app.route("/api/health", healthRoutes);
+
 app.route("/api/browser", browserRender);
 
 // Chat Agent Route
@@ -217,7 +217,7 @@ app.onError((err, c) => {
 });
 
 // Scheduled handler
-// Scheduled handler
+
 export default {
   fetch: app.fetch,
   scheduled: handleScheduled,
