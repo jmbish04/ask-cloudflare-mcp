@@ -1,6 +1,5 @@
 
 import { Agent } from "agents";
-import { Env } from "../../types";
 import { queryMCP } from "../../mcp/mcp-client";
 import { analyzeRepoAndGenerateQuestions } from "../../mcp/tools/git/repo-analyzer";
 import { Sandbox } from "../../containers/sandbox";

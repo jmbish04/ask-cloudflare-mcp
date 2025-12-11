@@ -1,4 +1,3 @@
-import { Env } from "../types";
 import { runHealthCheck } from "../core/health-check";
 
 export async function handleScheduled(

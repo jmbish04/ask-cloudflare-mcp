@@ -1,4 +1,3 @@
-import { Env } from "../types";
 import { createDbClient } from "../db/client";
 import { healthChecks, NewHealthCheck } from "../db/schema";
 import { checkHealth as checkAI } from "../ai/health";

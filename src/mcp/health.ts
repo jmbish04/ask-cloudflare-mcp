@@ -1,4 +1,3 @@
-import { Env } from "../types";
 import { HealthStepResult } from "../core/health-check";
 import { fetchCloudflareDocsIndex } from "./docs-fetcher";
 import { createMCPRequest } from "./mcp-client"; // Import the helper

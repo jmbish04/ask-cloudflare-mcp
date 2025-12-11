@@ -3,7 +3,6 @@ import {
     WorkflowEvent,
     WorkflowStep,
 } from "cloudflare:workers";
-import { Env } from "../types";
 import { BrowserTool } from "../mcp/tools/browser";
 import { sanitizeAndFormatResponse } from "../ai/utils/sanitizer";
 import { VectorizeService } from "../data/vectorize_service";

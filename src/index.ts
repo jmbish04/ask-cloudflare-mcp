@@ -1,6 +1,5 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
-import { Env } from "./types";
 import apiRoutes from "./routes/api";
 import healthRoutes from "./routes/health";
 import { handleWebSocket } from "./routes/websocket";

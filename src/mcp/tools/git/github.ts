@@ -1,4 +1,3 @@
-import { Env } from "../../../types";
 
 /**
  * Helper to get token from Env

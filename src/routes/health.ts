@@ -1,6 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { streamText } from "hono/streaming";
-import { Env } from "../types";
 import { runHealthCheck, getLatestHealthCheck } from "../core/health-check";
 import { createDbClient } from "../db/client";
 import { healthChecks } from "../db/schema";

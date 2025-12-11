@@ -1,7 +1,6 @@
 
 import { BaseAgent } from "./BaseAgent";
 import { AgentState } from "./types";
-import { Env } from "../../types";
 
 export interface ChatState extends AgentState {
     // Extended state can be added here

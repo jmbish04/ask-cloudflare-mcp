@@ -1,4 +1,3 @@
-import { Env } from "../types";
 import { createDbClient } from "./client";
 import { HealthStepResult } from "../core/health-check";
 import { healthChecks } from "./schema";

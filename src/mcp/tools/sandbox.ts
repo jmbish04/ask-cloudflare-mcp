@@ -1,5 +1,4 @@
 import { getSandbox } from "@cloudflare/sandbox";
-import { Env } from "../../types";
 
 export interface GitOperation {
     repoUrl: string;

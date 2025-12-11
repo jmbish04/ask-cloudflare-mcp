@@ -1,4 +1,3 @@
-import { Env } from "../types";
 import { generateText, generateStructured, generateEmbedding } from "./providers/worker-ai";
 import { queryGemini } from "./providers/gemini";
 import { queryOpenAI } from "./providers/openai";

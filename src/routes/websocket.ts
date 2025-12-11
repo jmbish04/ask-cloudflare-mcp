@@ -1,4 +1,4 @@
-import { Env, WSMessage, MCPRequest, MCPResponse } from "../types";
+import { WSMessage, MCPRequest, MCPResponse } from "../types";
 import { createMCPResponse, queryMCP } from "../mcp/mcp-client";
 import { rewriteQuestionForMCP } from "../ai/providers/worker-ai";
 import { runHealthCheck } from "../core/health-check";

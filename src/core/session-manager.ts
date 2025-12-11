@@ -1,5 +1,4 @@
 import { eq, desc } from 'drizzle-orm';
-import { Env } from "../types";
 import { createDbClient } from "../db/client";
 import { sessions, questions, Session, Question, NewSession, NewQuestion } from "../db/schema";
 import { logAction } from "./action-logger";

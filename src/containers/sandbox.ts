@@ -1,5 +1,4 @@
 import { Container } from "@cloudflare/containers";
-import { Env } from "../types";
 
 
 /**
