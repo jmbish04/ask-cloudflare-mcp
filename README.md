@@ -134,7 +134,7 @@ All deep research tasks are asynchronous.
 
 ## 🤝 Contributing
 
-Please read [AGENTS.md](https://www.google.com/search?q=./AGENTS.md) for strict architectural rules regarding the separation of Backend (Workers) and Frontend (React).
+Please read [AGENTS.md](./AGENTS.md) for strict architectural rules regarding the separation of Backend (Workers) and Frontend (React).
 
 ## 📄 License
 
