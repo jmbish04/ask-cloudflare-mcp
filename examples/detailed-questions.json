@@ -1,24 +1,18 @@
 {
-  "repo_owner": "example-user",
-  "repo_name": "my-react-app",
+  "repo_owner": "facebook",
+  "repo_name": "react",
   "questions": [
     {
-      "query": "How do I migrate my React Webpack app's environment variables to Cloudflare Pages?",
+      "query": "How do I migrate my React app environment variables to Cloudflare Pages?",
       "cloudflare_bindings_involved": ["env", "secrets"],
-      "node_libs_involved": ["dotenv", "webpack"],
+      "node_libs_involved": ["dotenv"],
       "tags": ["migration", "environment-variables", "pages"],
       "relevant_code_files": [
         {
-          "file_path": "webpack.config.js",
+          "file_path": "package.json",
           "start_line": 1,
           "end_line": 50,
-          "relation_to_question": "Webpack configuration with environment variable handling"
-        },
-        {
-          "file_path": ".env.example",
-          "start_line": 1,
-          "end_line": 20,
-          "relation_to_question": "Example environment variables used in the app"
+          "relation_to_question": "Project configuration"
         }
       ]
     },
@@ -29,10 +23,10 @@
       "tags": ["api", "pages-functions", "fetch"],
       "relevant_code_files": [
         {
-          "file_path": "src/api/client.js",
-          "start_line": 10,
-          "end_line": 80,
-          "relation_to_question": "Current API client implementation using axios"
+          "file_path": "package.json",
+          "start_line": 1,
+          "end_line": 50,
+          "relation_to_question": "Dependencies"
         }
       ]
     },
@@ -43,10 +37,10 @@
       "tags": ["ssr", "react", "pages"],
       "relevant_code_files": [
         {
-          "file_path": "src/index.js",
+          "file_path": "package.json",
           "start_line": 1,
-          "end_line": 30,
-          "relation_to_question": "Current client-side React rendering setup"
+          "end_line": 50,
+          "relation_to_question": "Dependencies"
         }
       ]
     }

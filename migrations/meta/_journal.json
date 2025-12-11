@@ -8,6 +8,48 @@
       "when": 1764531139094,
       "tag": "0000_groovy_the_order",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1764539056867,
+      "tag": "0001_sticky_korvac",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1765352269299,
+      "tag": "0002_wealthy_vance_astro",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1765352566000,
+      "tag": "0003_magical_inertia",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1765353868081,
+      "tag": "0004_hot_thaddeus_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1765356960030,
+      "tag": "0005_vengeful_saracen",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1765357549119,
+      "tag": "0006_orange_black_knight",
+      "breakpoints": true
     }
   ]
 }

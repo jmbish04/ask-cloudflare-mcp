@@ -1,498 +1,142 @@
-# Ask Cloudflare MCP Worker
+# Ask Cloudflare MCP + Deep Research
 
-A Cloudflare Worker that acts as both an API and MCP (Model Context Protocol) server with GitHub integration. This worker helps you query Cloudflare documentation, analyze responses with AI, and get context-aware answers to your Cloudflare-related questions.
+An advanced Cloudflare Worker that acts as an intelligent research architect. It combines the **Model Context Protocol (MCP)** with **Cloudflare Workflows**, **Vectorize**, and **Queues** to perform deep, multi-step analysis of repositories, PRDs, and error logs.
 
-## Features
+## 🚀 Key Capabilities
 
-- 🚀 **Dual Interface**: Works as both a REST API and MCP server
-- 🤖 **AI-Powered Analysis**: Uses Cloudflare Worker AI to analyze questions and generate follow-ups
-- 📚 **Cloudflare Docs Integration**: Queries official Cloudflare documentation via MCP
-- 🔗 **GitHub Integration**: Fetches code context from GitHub repositories
-- 🌐 **WebSocket Support**: Real-time communication for streaming responses
-- 📖 **OpenAPI 3.1.0**: Fully documented API with Swagger UI
-- 🎨 **Beautiful Landing Page**: Interactive documentation served as static assets
-- 🤖 **Auto-Analyze Repositories**: Automatically analyze any GitHub repo with AI-generated questions
-- 💾 **KV Caching**: Smart caching of generated questions to avoid re-analysis
-- 🔒 **Secure**: Uses GitHub Personal Access Token for readonly repository access
+- **🧠 Deep Research Agent**: Uses Cloudflare Workflows to orchestrate multi-step reasoning (Brainstorm → Search → Synthesize).
+- **📚 Semantic Memory**: Stores and retrieves knowledge using **Cloudflare Vectorize** (RAG).
+- **⚡ Async Architecture**: Uses **Cloudflare Queues** to buffer requests, ensuring high availability and zero timeouts.
+- **🐳 Containerized Analysis**: Spawns ephemeral containers to clone and inspect private GitHub repositories securely.
+- **🔌 Dual Interface**:
+  - **REST API**: For web clients (React Frontend) and CI/CD pipelines.
+  - **MCP Server**: Connects natively with Claude Desktop, Cursor, and other AI IDEs.
 
-## Architecture
+## 🏗️ Architecture
 
-```
-┌─────────────────┐
-│   Client/User   │
-└────────┬────────┘
-         │
-    ┌────▼─────┐
-    │   API    │◄──── REST API (HTTP)
-    │    or    │
-    │   MCP    │◄──── MCP Server (WebSocket)
-    └────┬─────┘
-         │
-    ┌────▼──────────────────────────┐
-    │  Cloudflare Worker (Hono)    │
-    │  ┌────────────────────────┐  │
-    │  │  Question Processing   │  │
-    │  └───┬────────────────┬───┘  │
-    │      │                │       │
-    │  ┌───▼──────┐    ┌───▼────┐ │
-    │  │ Worker AI│    │  MCP   │ │
-    │  │          │    │ Client │ │
-    │  └──────────┘    └───┬────┘ │
-    │                      │       │
-    │                  ┌───▼────┐ │
-    │                  │ GitHub │ │
-    │                  │  API   │ │
-    │                  └────────┘ │
-    └───────────────────────────────┘
-```
+```mermaid
+graph TD
+    Client[Client / Frontend] -->|POST /api/research| API[Worker API]
+    API -->|Dispatch Job| Queue[Research Queue]
+    
+    subgraph "Async Processing"
+        Queue -->|Trigger| Workflow[Research Workflow]
+        
+        Workflow -->|1. Brainstorm| AI_Reasoning[Workers AI (Reasoning)]
+        Workflow -->|2. Gather Intel| Tools
+        
+        subgraph Tools
+            MCP_Client[MCP Client] -->|Query| CF_Docs[Cloudflare Docs]
+            Vector_Service[Vector Service] -->|Search| Vectorize[Vector DB]
+            Container[Repo Analyzer] -->|Clone| GitHub[GitHub API]
+        end
+        
+        Workflow -->|3. Synthesize| AI_Writer[Workers AI (Writing)]
+        Workflow -->|4. Persist| DB[(D1 Database)]
+    end
+    
+    Client -->|Poll Status| API
+    API -->|Read| DB
+````
 
-## Installation
+## 🛠️ Features by Mode
+
+| Mode | Description | Tech Stack |
+| :--- | :--- | :--- |
+| **Feasibility Auditor** | Analyzes a GitHub repo to determine if it can migrate to Workers. | Container + AST Parsing + AI |
+| **PRD Enricher** | Reads a Product Requirement Doc and injects technical implementation details. | Vectorize (RAG) + Workflows |
+| **Error Fixer** | Analyzes error logs and stack traces to provide specific code fixes. | MCP (Docs Search) + AI |
+| **Librarian** | Ingests URLs and code snippets into the Vector Database for future recall. | Vectorize + Embeddings |
+
+## 📦 Installation & Setup
 
 ### Prerequisites
 
-- Node.js 18+
-- Cloudflare account with Workers enabled
-- GitHub Personal Access Token (readonly)
-- Wrangler CLI
+  - Node.js 18+
+  - Cloudflare Account (Workers Paid Plan required for Vectorize/Workflows)
+  - GitHub Token (Repo scope)
 
-### Setup
+### 1\. Clone & Install
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd ask-cloudflare-mcp
-   ```
+```bash
+git clone <repository-url>
+cd ask-cloudflare-mcp
+npm install
+```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+### 2\. Infrastructure Setup
 
-3. **Configure secrets**
+Run the following commands to create the necessary Cloudflare resources:
 
-   Create a `.dev.vars` file for local development:
-   ```bash
-   GITHUB_TOKEN=your_github_personal_access_token
-   ```
+```bash
+# Database
+wrangler d1 create ask-cloudflare-mcp
 
-   For production, set the secret using Wrangler:
-   ```bash
-   wrangler secret put GITHUB_TOKEN
-   ```
+# Vector Index
+wrangler vectorize create ask-cloudflare-index --preset @cf/baai/bge-large-en-v1.5
 
-4. **Update wrangler.toml**
+# Queues
+wrangler queues create research-tasks
 
-   Update the account ID and other settings in `wrangler.toml` if needed.
+# Secrets
+wrangler secret put GITHUB_TOKEN
+```
 
-## Usage
+### 3\. Local Development
 
-### Local Development
+Start the full stack (Frontend + Backend + Database):
 
 ```bash
 npm run dev
 ```
 
-This starts the worker at `http://localhost:8787`
+*Backend runs on port 8787. Frontend runs on port 5173.*
 
-### Deploy to Cloudflare
+## 🔌 API Endpoints
 
-```bash
-npm run deploy
-```
+### Async Research Jobs
 
-### Access the Landing Page
+All deep research tasks are asynchronous.
 
-Once deployed (or running locally), visit the root URL to see the interactive documentation landing page:
+1.  **Submit Job**
 
-- **Local**: `http://localhost:8787`
-- **Production**: `https://your-worker.workers.dev`
+      - `POST /api/research`
+      - Body: `{ "query": "...", "mode": "feasibility" | "enrichment" | "error_fix", "context": "..." }`
+      - Returns: `{ "sessionId": "uuid", "status": "queued" }`
 
-The landing page provides:
-- Quick links to API documentation and Swagger UI
-- Interactive examples with copy-paste functionality
-- Complete API endpoint reference
-- WebSocket/MCP usage guide
-- Setup instructions
+2.  **Poll Status**
 
-## API Endpoints
+      - `GET /api/sessions/:sessionId`
+      - Returns: `{ "status": "processing", "steps_completed": ["brainstorm", "search"], "result": null }`
 
-### REST API
+### Standard Tools
 
-#### 1. Simple Questions Endpoint
+  - `POST /api/questions/simple`: Quick Q\&A (Sync)
+  - `POST /api/ingest`: Add content to Vector Memory
 
-Process an array of simple questions.
-
-**Endpoint:** `POST /api/questions/simple`
-
-**Request Body:**
-```json
-{
-  "questions": [
-    "How do I deploy a Hono application to Cloudflare Workers?",
-    "What are the best practices for using Workers KV?"
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "results": [
-    {
-      "original_question": "How do I deploy a Hono application to Cloudflare Workers?",
-      "rewritten_question": "What are the steps to deploy a Hono framework application to Cloudflare Workers, including configuration and deployment commands?",
-      "mcp_response": { ... },
-      "follow_up_questions": ["How do I configure routes?"],
-      "follow_up_answers": [ ... ],
-      "ai_analysis": "The response provides comprehensive deployment steps..."
-    }
-  ],
-  "total_processed": 2,
-  "timestamp": "2024-11-30T12:00:00.000Z"
-}
-```
-
-**Example:**
-```bash
-curl -X POST https://your-worker.workers.dev/api/questions/simple \
-  -H "Content-Type: application/json" \
-  -d @examples/simple-questions.json
-```
-
-#### 2. Detailed Questions Endpoint
-
-Process detailed questions with code context from GitHub.
-
-**Endpoint:** `POST /api/questions/detailed`
-
-**Request Body:**
-```json
-{
-  "repo_owner": "example-user",
-  "repo_name": "my-react-app",
-  "questions": [
-    {
-      "query": "How do I migrate my React Webpack app to Cloudflare Pages?",
-      "cloudflare_bindings_involved": ["env", "pages"],
-      "node_libs_involved": ["webpack", "react"],
-      "tags": ["migration", "pages"],
-      "relevant_code_files": [
-        {
-          "file_path": "webpack.config.js",
-          "start_line": 1,
-          "end_line": 50,
-          "relation_to_question": "Webpack configuration"
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "results": [
-    {
-      "original_question": { ... },
-      "code_snippets": [
-        {
-          "file_path": "webpack.config.js",
-          "code": "module.exports = { ... }",
-          "relation": "Webpack configuration"
-        }
-      ],
-      "rewritten_question": "...",
-      "mcp_response": { ... },
-      "follow_up_questions": [ ... ],
-      "follow_up_answers": [ ... ],
-      "ai_analysis": "..."
-    }
-  ],
-  "total_processed": 1,
-  "timestamp": "2024-11-30T12:00:00.000Z"
-}
-```
-
-**Example:**
-```bash
-curl -X POST https://your-worker.workers.dev/api/questions/detailed \
-  -H "Content-Type: application/json" \
-  -d @examples/detailed-questions.json
-```
-
-#### 3. Auto-Analyze Repository Endpoint (NEW!)
-
-Automatically analyze a GitHub repository, generate questions using Worker AI, cache them in KV, and process through the detailed pathway. **Always starts with the fundamental question: "Can this repository be retrofitted to run on Cloudflare?"**
-
-**Endpoint:** `POST /api/questions/auto-analyze`
-
-**Request Body:**
-```json
-{
-  "repo_url": "https://github.com/facebook/react",
-  "force_refresh": false,  // Optional: bypass cache (default: false)
-  "max_files": 50         // Optional: max files to analyze (default: 50)
-}
-```
-
-**Response:**
-```json
-{
-  "repo_url": "https://github.com/facebook/react",
-  "repo_owner": "facebook",
-  "repo_name": "react",
-  "cached": false,
-  "questions_generated": 6,
-  "questions": [
-    {
-      "query": "Can the react repository be retrofitted to run on Cloudflare Workers or Cloudflare Pages?",
-      "cloudflare_bindings_involved": ["env", "kv", "r2", "durable-objects", "ai"],
-      "node_libs_involved": [],
-      "tags": ["feasibility", "migration", "cloudflare", "assessment"],
-      "relevant_code_files": []
-    },
-    // ... more AI-generated questions
-  ],
-  "results": [
-    // Full analysis for each question (same format as detailed endpoint)
-  ],
-  "total_processed": 6,
-  "timestamp": "2024-11-30T12:00:00.000Z"
-}
-```
-
-**Example:**
-```bash
-curl -X POST https://your-worker.workers.dev/api/questions/auto-analyze \
-  -H "Content-Type: application/json" \
-  -d @examples/auto-analyze.json
-```
-
-**Features:**
-- 🤖 **AI-Powered Analysis**: Worker AI analyzes your codebase and generates relevant questions
-- 💾 **KV Caching**: Questions are cached for 7 days to avoid re-analysis
-- 🔍 **Smart File Filtering**: Automatically identifies relevant files (configs, source code)
-- 🎯 **Fundamental Question**: Always includes "Can this repo run on Cloudflare?"
-- 📊 **Comprehensive Results**: Full MCP analysis with follow-up questions for each generated question
-
-**How it works:**
-1. Parse the GitHub repository URL
-2. Check KV cache for previously generated questions (unless `force_refresh=true`)
-3. If not cached: fetch repository structure and relevant files
-4. Use Worker AI to analyze the codebase and generate migration questions
-5. Always include the fundamental feasibility question
-6. Cache the questions in KV for future use
-7. Process all questions through the detailed pathway
-8. Return comprehensive analysis with answers
-
-#### 4. Health Check
-
-**Endpoint:** `GET /api/health`
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2024-11-30T12:00:00.000Z"
-}
-```
-
-### MCP Server (WebSocket)
-
-Connect to the MCP server via WebSocket at `/ws`.
-
-#### Initialize Session
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "initialize",
-  "params": {
-    "protocolVersion": "2024-11-05",
-    "clientInfo": {
-      "name": "my-client",
-      "version": "1.0.0"
-    }
-  },
-  "id": 1
-}
-```
-
-#### List Available Tools
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools/list",
-  "id": 2
-}
-```
-
-#### Call Tool
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools/call",
-  "params": {
-    "name": "query_cloudflare_docs",
-    "arguments": {
-      "query": "How do I use Durable Objects?",
-      "context": "Building a real-time chat application"
-    }
-  },
-  "id": 3
-}
-```
-
-### WebSocket API (Non-MCP)
-
-You can also use the WebSocket endpoint for simple real-time questions:
-
-```json
-{
-  "type": "question",
-  "data": {
-    "query": "How do I deploy a Worker?",
-    "context": {
-      "bindings": ["env", "kv"],
-      "libraries": ["hono"]
-    }
-  }
-}
-```
-
-Response:
-```json
-{
-  "type": "answer",
-  "data": {
-    "original_question": "How do I deploy a Worker?",
-    "rewritten_question": "...",
-    "mcp_response": { ... }
-  },
-  "timestamp": "2024-11-30T12:00:00.000Z"
-}
-```
-
-## Documentation
-
-### OpenAPI Specification
-
-Access the OpenAPI spec at `/openapi.json`
-
-### Swagger UI
-
-Interactive API documentation is available at `/swagger`
-
-## GitHub Integration
-
-The worker uses a GitHub Personal Access Token for readonly access to repositories. This allows it to:
-
-- Fetch file contents
-- Extract code snippets
-- Search repository code
-- Get repository structure
-
-### Creating a GitHub Token
-
-1. Go to GitHub Settings → Developer settings → Personal access tokens
-2. Generate a new token (classic)
-3. Select scopes: `repo` (for private repos) or `public_repo` (for public repos only)
-4. Copy the token and set it as `GITHUB_TOKEN` secret
-
-## Project Structure
+## 🧩 Project Structure
 
 ```
-ask-cloudflare-mcp/
+/
 ├── src/
-│   ├── index.ts              # Main worker entry point
-│   ├── types.ts              # TypeScript types and Zod schemas
-│   ├── routes/
-│   │   ├── api.ts            # REST API routes
-│   │   └── websocket.ts      # WebSocket handlers
-│   └── utils/
-│       ├── mcp-client.ts     # MCP client utilities
-│       ├── worker-ai.ts      # Worker AI integration
-│       └── github.ts         # GitHub API utilities
-├── public/                   # Static assets (served via ASSETS binding)
-│   ├── index.html            # Interactive landing page
-│   └── swagger.html          # Swagger UI page
-├── examples/
-│   ├── simple-questions.json
-│   └── detailed-questions.json
-├── wrangler.toml             # Cloudflare Workers configuration
-├── package.json
-├── tsconfig.json
-└── README.md
+│   ├── index.ts              # Entry point (API + Queue Consumer)
+│   ├── ai/                   # Centralized AI Logic (Worker AI, Gemini)
+│   ├── containers/           # Durable Objects (for Container checks)
+│   ├── core/                 # Core Utilities (Session, Logging, Health)
+│   ├── data/                 # Data Layer (Vectorize, D1)
+│   ├── git/                  # Git & GitHub Operations
+│   ├── mcp/                  # MCP Client & Tooling
+│   ├── routes/               # Hono API Routes
+│   └── workflows/            # Cloudflare Workflows ("Deep Research")
+├── frontend/                 # React + Vite UI
+└── containers/               # Python-based Repo Analyzer
 ```
 
-## Environment Variables
+## 🤝 Contributing
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token (readonly) | Yes |
-| `MCP_API_URL` | Cloudflare Docs MCP API URL | Yes (default set) |
-| `AI` | Worker AI binding | Yes (auto-configured) |
-| `ASSETS` | Static assets binding for landing page | Yes (auto-configured) |
-| `QUESTIONS_KV` | KV namespace for caching generated questions | Yes (auto-configured) |
+Please read [AGENTS.md](./AGENTS.md) for strict architectural rules regarding the separation of Backend (Workers) and Frontend (React).
 
-## Development
-
-### Running Tests
-
-```bash
-npm test
-```
-
-### Type Checking
-
-```bash
-npm run types
-```
-
-### Tailing Logs
-
-```bash
-npm run tail
-```
-
-## Comparison with Python Script
-
-This worker replicates and enhances the functionality of the provided Python script:
-
-| Feature | Python Script | Cloudflare Worker |
-|---------|---------------|-------------------|
-| Question Processing | ✅ | ✅ |
-| Worker AI Integration | ✅ | ✅ |
-| MCP Querying | ✅ | ✅ |
-| GitHub Integration | ❌ | ✅ |
-| Code Snippet Extraction | ✅ (local files) | ✅ (GitHub API) |
-| Follow-up Questions | ❌ | ✅ |
-| WebSocket Support | ❌ | ✅ |
-| OpenAPI Spec | ❌ | ✅ |
-| MCP Server | ❌ | ✅ |
-| Deployment | Local script | Global edge network |
-
-## License
+## 📄 License
 
 MIT
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Check the Cloudflare Workers documentation
-- Review the MCP protocol specification
-
-## Acknowledgments
-
-- Built with [Hono](https://hono.dev/)
-- Uses [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/)
-- Integrates with [Cloudflare Docs MCP](https://docs.mcp.cloudflare.com/)
-- GitHub integration via [GitHub REST API](https://docs.github.com/en/rest)

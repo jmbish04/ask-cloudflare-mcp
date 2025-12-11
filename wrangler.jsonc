@@ -1,0 +1,163 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "ask-cloudflare-mcp",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-11-30",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	"dev": {
+		"port": 8987
+	},
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
+	"kv_namespaces": [
+		{
+			"binding": "QUESTIONS_KV",
+			"id": "10054da1a5e04387ad6734c0432fa289",
+			"preview_id": "10054da1a5e04387ad6734c0432fa289",
+			"remote": true
+		},
+		{
+			"binding": "AGENT_MEMORY",
+			"id": "24fbcf46f3fa48369b2cadb37f32aff4",
+			"preview_id": "24fbcf46f3fa48369b2cadb37f32aff4",
+			"remote": true
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "ask-cloudflare-mcp",
+			"database_id": "66879f94-f773-4da3-819c-c56b2210cbb5",
+			"migrations_dir": "migrations",
+			"migrations_table": "__drizzle_migrations__"
+		}
+	],
+	"vars": {
+		"MCP_API_URL": "https://docs.mcp.cloudflare.com/mcp",
+		"WORKER_URL": "https://ask-cloudflare-mcp.hacolby.workers.dev",
+		// "WORKER_API_KEY": "dev-api-key", -- This is set as a secret
+		"GEMINI_MODEL": "gemini-3-pro-preview",
+		"OPENAI_MODEL": "gpt-5.1",
+		"DEFAULT_MODEL_REASONING": "@cf/meta/llama-4-scout-17b-16e-instruct",
+		"DEFAULT_MODEL_STRUCTURED_RESPONSE": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+		"DEFAULT_MODEL_EMBEDDING": "@cf/baai/bge-large-en-v1.5",
+		"DEFAULT_MODEL_RERANKER": "@cf/baai/bge-reranker-base",
+		"AI_GATEWAY_NAME": "ask-cloudflare-mcp"
+	},
+	"assets": {
+		"directory": "public",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	},
+	"triggers": {
+		"crons": [
+			"0 0 * * MON-SAT",
+			"0 0 * * SUN"
+		]
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "REPO_ANALYZER_CONTAINER",
+				"class_name": "RepoAnalyzerContainerConfig"
+			},
+			{
+				"name": "CHAT_AGENT",
+				"class_name": "ChatAgent"
+			},
+			{
+				"name": "SANDBOX",
+				"class_name": "Sandbox"
+			}
+		]
+	},
+	"browser": {
+		"binding": "BROWSER"
+	},
+	"containers": [
+		{
+			"name": "ask-cloudflare-mcp-repo-analyzer",
+			"image": "./containers/repo-analyzer/Dockerfile",
+			"class_name": "RepoAnalyzerContainerConfig"
+		},
+		{
+			"name": "ask-cloudflare-mcp-sandbox",
+			"image": "./containers/sandbox/Dockerfile",
+			"class_name": "Sandbox"
+		}
+	],
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"RepoAnalyzerContainerConfig"
+			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"Sandbox",
+				"ChatAgent"
+			]
+		}
+	],
+	//wrangler vectorize create cloudflare-docs-mcp-index --preset @cf/baai/bge-large-en-v1.5
+	"vectorize": [
+		{
+			"binding": "VECTORIZE_INDEX",
+			"index_name": "cloudflare-docs-mcp-index",
+			"remote": true
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "RESEARCH_QUEUE",
+				"queue": "ask-cloudflare-mcp-research"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "ask-cloudflare-mcp-research",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5
+			}
+		]
+	},
+	"workflows": [
+		{
+			"binding": "RESEARCH_WORKFLOW",
+			"name": "ask-cloudflare-research-workflow",
+			"class_name": "ResearchWorkflow"
+		},
+		{
+			"binding": "ENGINEER_WORKFLOW",
+			"name": "ask-cloudflare-engineer-workflow",
+			"class_name": "EngineerWorkflow"
+		},
+		{
+			"binding": "GOVERNANCE_WORKFLOW",
+			"name": "ask-cloudflare-governance-workflow",
+			"class_name": "GovernanceWorkflow"
+		},
+		{
+			"binding": "INGESTION_WORKFLOW",
+			"name": "ask-cloudflare-ingestion-workflow",
+			"class_name": "IngestionWorkflow"
+		},
+		{
+			"binding": "MAINTENANCE_WORKFLOW",
+			"name": "ask-cloudflare-maintenance-workflow",
+			"class_name": "MaintenanceWorkflow"
+		}
+	]
+}

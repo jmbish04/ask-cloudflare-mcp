@@ -1,6 +1,7 @@
 import { Env, WSMessage, MCPRequest, MCPResponse } from "../types";
-import { createMCPResponse } from "../utils/mcp-client";
-import { rewriteQuestionForMCP } from "../utils/worker-ai";
+import { createMCPResponse, queryMCP } from "../mcp/mcp-client";
+import { rewriteQuestionForMCP } from "../ai/providers/worker-ai";
+import { runHealthCheck } from "../core/health-check";
 
 /**
  * Handle WebSocket connections for real-time MCP and API communication
@@ -25,6 +26,8 @@ export async function handleWebSocket(request: Request, env: Env): Promise<Respo
       // Check if this is an MCP JSON-RPC request
       if (data.jsonrpc === "2.0") {
         await handleMCPRequest(server, data as MCPRequest, env);
+      } else if (data.type === "terminal_init" || data.type === "terminal_input") {
+        await handleTerminalMessage(server, data, env);
       } else {
         // Handle as API message
         await handleAPIMessage(server, data as WSMessage, env);
@@ -38,7 +41,10 @@ export async function handleWebSocket(request: Request, env: Env): Promise<Respo
         },
         timestamp: new Date().toISOString(),
       };
-      server.send(JSON.stringify(errorMsg));
+      // Only send if open
+      if (server.readyState === WebSocket.OPEN) {
+        server.send(JSON.stringify(errorMsg));
+      }
     }
   });
 
@@ -132,14 +138,7 @@ async function handleMCPRequest(
           const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, query);
 
           // Query MCP
-          const mcpResponse = await fetch(env.MCP_API_URL, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-            },
-            body: JSON.stringify({ query: rewrittenQuestion, context }),
-          }).then((r) => r.json());
+          const mcpResponse = await queryMCP(rewrittenQuestion, context, env.MCP_API_URL);
 
           // Send result
           const resultResponse: MCPResponse = createMCPResponse(
@@ -272,14 +271,7 @@ async function handleAPIMessage(
       const rewrittenQuestion = await rewriteQuestionForMCP(env.AI, query, context);
 
       // Query MCP
-      const mcpResponse = await fetch(env.MCP_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-        body: JSON.stringify({ query: rewrittenQuestion, context: context?.context }),
-      }).then((r) => r.json());
+      const mcpResponse = await queryMCP(rewrittenQuestion, context?.context, env.MCP_API_URL);
 
       // Send answer
       const answerMsg: WSMessage = {
@@ -292,6 +284,39 @@ async function handleAPIMessage(
         timestamp: new Date().toISOString(),
       };
       ws.send(JSON.stringify(answerMsg));
+    } else if (message.type === "status" && message.data.status === "run_health_check") {
+      // Handle health check request
+      const log = (msg: string) => {
+        const statusMsg: WSMessage = {
+          type: "status",
+          data: {
+            status: "processing",
+            action: "run_health_check",
+            message: msg,
+          },
+          timestamp: new Date().toISOString(),
+        };
+        ws.send(JSON.stringify(statusMsg));
+      };
+
+      try {
+        const result = await runHealthCheck(env, 'manual-ws', 'websocket', (step, status, msg) => {
+          const logMsg = `[${step}] ${status.toUpperCase()}: ${msg}`;
+          log(logMsg);
+        });
+
+        const resultMsg: WSMessage = {
+          type: "answer",
+          data: {
+            type: "health_check_result",
+            result
+          },
+          timestamp: new Date().toISOString(),
+        };
+        ws.send(JSON.stringify(resultMsg));
+      } catch (error) {
+        throw error;
+      }
     } else {
       throw new Error(`Unknown message type: ${message.type}`);
     }
@@ -307,3 +332,59 @@ async function handleAPIMessage(
     ws.send(JSON.stringify(errorMsg));
   }
 }
+
+/**
+ * Handle Terminal messages
+ */
+async function handleTerminalMessage(
+  ws: WebSocket,
+  message: any,
+  env: Env
+): Promise<void> {
+  const containerName = message.data?.container || "sandbox"; // Default to sandbox
+
+  // Determine target DO
+  let targetDO: any; // Using any to avoid importing DurableObjectNamespace if not available
+  if (containerName === "sandbox") {
+    targetDO = env.SANDBOX;
+  } else if (containerName === "repo-analyzer") {
+    targetDO = env.REPO_ANALYZER_CONTAINER;
+  } else {
+    ws.send(JSON.stringify({ type: "error", data: { error: "Unknown container" } }));
+    return;
+  }
+
+  const id = targetDO.newUniqueId();
+  const stub = targetDO.get(id);
+
+  if (message.type === "terminal_input") {
+    const input = message.data.input;
+
+    if (input.endsWith('\r')) {
+      const cmd = input.trim();
+      if (cmd) {
+        ws.send(JSON.stringify({ type: "terminal_output", data: `\r\n> Executing: ${cmd}\r\n` }));
+        try {
+          const result = await stub.execute(["/bin/sh", "-c", cmd]);
+          if (result && result.stdout) {
+            // Attempt to format generic output if object
+            ws.send(JSON.stringify({ type: "terminal_output", data: result.stdout }));
+          } else if (typeof result === 'string') {
+            ws.send(JSON.stringify({ type: "terminal_output", data: result }));
+          } else {
+            ws.send(JSON.stringify({ type: "terminal_output", data: JSON.stringify(result) }));
+          }
+        } catch (e) {
+          ws.send(JSON.stringify({ type: "error", data: { error: String(e) } }));
+        }
+      }
+      ws.send(JSON.stringify({ type: "terminal_output", data: "\r\n$ " }));
+    } else {
+      // Echo back
+      ws.send(JSON.stringify({ type: "terminal_output", data: input }));
+    }
+  } else if (message.type === "terminal_init") {
+    ws.send(JSON.stringify({ type: "terminal_output", data: "$ " }));
+  }
+}
+

@@ -1,0 +1,1 @@
+ALTER TABLE `health_checks` ADD `ai_analysis` text;
