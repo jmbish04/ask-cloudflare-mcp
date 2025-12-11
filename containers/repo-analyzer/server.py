@@ -25,7 +25,7 @@ def clone_repo():
     repo_url = data.get('repo_url')
     owner = data.get('owner')
     repo = data.get('repo')
-    token = data.get('token')
+    token = os.environ.get('GITHUB_TOKEN')
     
     if not repo_url or not owner or not repo:
         return jsonify({"error": "Missing required parameters"}), 400
