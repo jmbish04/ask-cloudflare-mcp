@@ -1,5 +1,4 @@
 
-import { Env } from "../../types";
 import { HealthStepResult } from "../../core/health-check";
 import { testAnyValidToken } from "../../utils/cloudflare-token";
 

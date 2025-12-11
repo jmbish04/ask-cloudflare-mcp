@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { Env } from "../../types";
 import { env } from "process";
 import { getAIGatewayUrl } from "../utils/ai-gateway";
 

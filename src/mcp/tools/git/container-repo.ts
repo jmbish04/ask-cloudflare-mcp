@@ -1,4 +1,3 @@
-import { Env } from "../../../types";
 
 /**
  * Clone repository in container and get file contents

@@ -1,5 +1,4 @@
 import puppeteer from "@cloudflare/puppeteer";
-import { Env } from "../../types";
 
 export class BrowserTool {
     constructor(private env: Env) { }

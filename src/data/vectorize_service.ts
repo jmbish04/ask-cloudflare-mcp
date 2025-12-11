@@ -1,4 +1,3 @@
-import { Env } from '../types';
 import { generateEmbedding } from '../ai/providers/worker-ai';
 
 export interface VectorQueryOptions {

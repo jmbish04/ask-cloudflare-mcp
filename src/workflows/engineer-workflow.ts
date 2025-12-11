@@ -1,5 +1,4 @@
 import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:workers';
-import { Env } from '../types';
 import { generateStructured } from '../ai/providers/worker-ai';
 import * as github from '../mcp/tools/git/github';
 

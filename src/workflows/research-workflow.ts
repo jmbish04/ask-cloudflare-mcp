@@ -1,5 +1,4 @@
 import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:workers';
-import { Env } from '../types';
 import { queryMCP } from '../mcp/mcp-client';
 import { VectorizeService } from '../data/vectorize_service';
 import { generateStructured } from '../ai/providers/worker-ai';

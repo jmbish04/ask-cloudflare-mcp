@@ -1,4 +1,3 @@
-import { Env } from "../../types";
 import { generateStructured } from "../providers/worker-ai";
 
 export interface HealthFailureAnalysis {

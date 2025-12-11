@@ -11,7 +11,6 @@
  * @requires sanitizeAndFormatResponse - Utility for cleaning AI output for frontend display.
  */
 
-import { Env } from "../../types";
 import { cleanJsonOutput, sanitizeAndFormatResponse } from "../utils/sanitizer";
 
 // Type alias for the AI binding to ensure compatibility across various Worker types

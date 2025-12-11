@@ -1,8 +1,5 @@
 import { z } from "zod";
 
-// Environment bindings
-export type Env = Cloudflare.Env;
-
 // Question schema for simple pathway
 export const SimpleQuestionSchema = z.object({
   query: z.string().describe("The question to ask"),

@@ -1,4 +1,4 @@
-import { Env, DetailedQuestion, MigrationPillar } from "../../../types";
+import { DetailedQuestion, MigrationPillar } from "../../../types";
 import { queryWorkerAIStructured } from "../../../ai/providers/worker-ai";
 import { queryGeminiStructured } from "../../../ai/providers/gemini";
 import { getRepoStructure, fetchGitHubFile } from "./github";

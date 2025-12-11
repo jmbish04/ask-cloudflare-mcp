@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 import { env } from "process";
-import { Env } from "../../types";
 import { getAIGatewayUrl } from "../utils/ai-gateway";
 
 export const DEFAULT_OPENAI_MODEL = env.OPENAI_MODEL || "gpt-4o";

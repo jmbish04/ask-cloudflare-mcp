@@ -3,7 +3,6 @@ import {
     WorkflowEvent,
     WorkflowStep,
 } from "cloudflare:workers";
-import { Env } from "../types";
 import { CLOUDFLARE_BINDING_MAP } from "../utils/cloudflare-bindings";
 
 interface MaintenanceParams {
